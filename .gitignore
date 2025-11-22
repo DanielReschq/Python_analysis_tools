@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# some folder and file types to ignore
+/.vscode
+*/build*
+/runs/*
+*.txt
+*.pdf
+*.csv
+/Data/*
