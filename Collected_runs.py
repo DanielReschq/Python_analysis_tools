@@ -3,6 +3,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import glob
 import tomllib
+from pathlib import Path
+import sympy
+import FS3
+import sys
 
 # from matplotlib.lines import Line2D
 import struct
@@ -91,17 +95,9 @@ class single_run:
         self.path_to_run = path_to_run
         self.params = get_parameters(path_to_run + "/config.toml")
         self.data = get_data(path_to_run + "/output_files/output.csv", cutoff)
-
-        # self.data["energy"] = self.data["energy"] / self.params["N"]
-        # self.data["mag"] = self.data["mag"] / self.params["N"]
-        # self.data["mag_stag"] = self.data["mag_stag"] / self.params["N"]
-        # self.data["mag2"] = self.data["mag2"] / (self.params["N"] ** 2)
-        # self.data["mag4"] = self.data["mag4"] / (self.params["N"] ** 4)
-        # self.data["spin_stiffness"] = self.data["spin_stiffness"] / 2.0
-        # self.data["susceptibility"] = self.data["susceptibility"] / self.params["N"]
-        # self.data["susceptibility_stag"] = (
-        #     self.data["susceptibility_stag"] / self.params["N"]
-        # )
+        self.time = pd.read_csv(
+            path_to_run + "/output_files/time.csv", header=1, sep=";"
+        )
 
         self.L = self.params["Lx"]
         self.temperature = self.params["temp"]
@@ -143,13 +139,15 @@ class single_run:
         plt.plot(x, np.ones_like(x) * (mean - err), color="red", ls="--")
         plt.show()
 
-    def get_Spin_correletion(self):
+    def get_spin_correletion(self, direction="X"):
         dict = pd.read_csv(
-            self.path_to_run + "/output_files/spin_corrX.csv",
+            self.path_to_run + f"/output_files/spin_corr{direction}.csv",
             header=None,
             sep=";",
             skiprows=5,
         )
+
+        distance = []
 
         C_AA = []
         C_AA_err = []
@@ -161,6 +159,8 @@ class single_run:
         C_BB_err = []
 
         for i in range(1, len(dict.columns), 4):
+
+            distance.append(i // 4)
 
             avg = np.mean(dict[i].to_numpy())
             err = np.std(dict[i].to_numpy()) / np.sqrt(len(dict[i].to_numpy()))
@@ -183,6 +183,7 @@ class single_run:
             C_BB_err.append(err)
 
         spin_corr = {
+            "distance": np.array(distance),
             "AA": (np.array(C_AA), np.array(C_AA_err)),
             "AB": (np.array(C_AB), np.array(C_AB_err)),
             "BA": (np.array(C_BA), np.array(C_BA_err)),
@@ -198,7 +199,7 @@ class collected_runs:
     def get_L_dict(self):
         """gives a dictionary sorted by L"""
 
-        L_list = sorted(list(set(run.L for run in self.runs)))
+        L_list = np.array(sorted(list(set(run.L for run in self.runs))))
 
         dic = {}
 
@@ -216,7 +217,7 @@ class collected_runs:
     def get_g_dict(self):
         """gives a dictionary sorted by temperature of j_pert"""
 
-        g_list = sorted(list(set(run.g_param for run in self.runs)))
+        g_list = np.array(sorted(list(set(run.g_param for run in self.runs))))
 
         dic = {}
         g_index = 0
@@ -231,10 +232,12 @@ class collected_runs:
             g_index += 1
         return g_list, dic
 
-    def __init__(self, path_to_run: str, T0: bool, cutoff: int):
+    def __init__(self, path_to_run: str | list[str], T0: bool, cutoff: int):
+        self.path_to_run = path_to_run
         self.T0 = T0
         self.runs = []
         self.obs_names = [
+            "g_param",
             "energy",
             "mag",
             "mag_stag",
@@ -246,9 +249,32 @@ class collected_runs:
             "spin_stiffness",
         ]
 
-        for L_folder in sorted(glob.glob(path_to_run + "/L*")):
-            for g_param_folder in sorted(glob.glob(L_folder + "/*")):
-                self.runs.append(single_run(g_param_folder, self.T0, cutoff))
+        self.obs_labels = {
+            "energy": r"$e$",
+            "mag": r"$m$",
+            "mag_stag": r"$m_s$",
+            "mag2": r"$m^2$",
+            "mag4": r"$m^4$",
+            "susceptibility": r"$\chi$",
+            "susceptibility_stag": r"$\chi_s$",
+            "binder": r"$U_2$",
+            "spin_stiffness": r"$\rho_s$",
+        }
+
+        if self.T0:
+            self.obs_labels["g_param"] = r"$J^{\perp}$"
+        else:
+            self.obs_labels["g_param"] = r"$T$"
+
+        if isinstance(path_to_run, list):
+            for p in path_to_run:
+                for L_folder in sorted(glob.glob(p + "/L*")):
+                    for g_param_folder in sorted(glob.glob(L_folder + "/*")):
+                        self.runs.append(single_run(g_param_folder, self.T0, cutoff))
+        else:
+            for L_folder in sorted(glob.glob(path_to_run + "/L*")):
+                for g_param_folder in sorted(glob.glob(L_folder + "/*")):
+                    self.runs.append(single_run(g_param_folder, self.T0, cutoff))
 
         self.runs.sort(key=lambda x: (x.L, x.g_param))
 
@@ -262,69 +288,337 @@ class collected_runs:
         self.L_list, self.L_dict = self.get_L_dict()
         self.g_list, self.g_dict = self.get_g_dict()
 
-    def write_to_FS3_file(self, suffix=""):
-        fname = ""
-        for obs_name in self.obs_names:
-            if self.T0:
-                fname = "../dataJ/" + obs_name + suffix + ".dat"
-            else:
-                fname = "../dataT/" + obs_name + suffix + ".dat"
-            f = open(fname, "w")
+    def write_to_FS3_file(self, path: str | list[str] = None):
+        if path is None:
+            path = self.path_to_run
 
-            L_index = 0
-            for L in self.L_list:
-                f.write("#" + str(L_index) + "\n")
-                for run in self.L_dict[L]:
-                    f.write(
-                        "{:d}     {:2.15e}     {:2.15e}     {:2.15e}\n".format(
-                            L,
-                            run.g_param,
-                            run.means_err[obs_name][0],
-                            run.means_err[obs_name][1],
+        if isinstance(path, list):
+            for single_path in path:
+                self.write_to_FS3_file(single_path)
+        else:
+            fname = ""
+            Path(path + "/FS3/").mkdir(parents=True, exist_ok=True)
+            for obs_name in self.obs_names:
+                fname = path + "/FS3/" + obs_name + ".dat"
+                f = open(fname, "w")
+
+                L_index = 0
+                for L in self.L_list:
+                    f.write("#" + str(L_index) + "\n")
+                    for run in self.L_dict[L]:
+                        f.write(
+                            "{:d}     {:2.15e}     {:2.15e}     {:2.15e}\n".format(
+                                L,
+                                run.g_param,
+                                run.means_err[obs_name][0],
+                                run.means_err[obs_name][1],
+                            )
                         )
-                    )
-                f.write("\n\n")
-            f.close()
+                    f.write("\n\n")
+                f.close()
 
-    def get_param_vs_obs(self, obs_name):
+    def get_x_vs_y_data(
+        self,
+        xname,
+        yname,
+        xfunc=None,
+        yfunc=None,
+        arg={},
+        plot=False,
+        xscale="linear",
+        yscale="linear",
+        xlabel="",
+        ylabel="",
+    ):
+        """get table of any data x vs y.
+        if x error exists: return tab[L] = [x,y,xerr,yerr].T
+        else: return tab[L] = [x,y,yerr].T
+        arg{} can be dictionary of additional parameters.
+        write errors of arguments as "dName": error
+        labels get appended to standard x and y label
+        """
+
         tab = {}
         for L in self.L_list:
-            x = []
-            y = []
-            yerr = []
+            xData = []
+            yData = []
+            xerrData = []
+            yerrData = []
             for run in self.L_dict[L]:
-                x.append(run.g_param)
-                y.append(run.means_err[obs_name][0])
-                yerr.append(run.means_err[obs_name][1])
+                N = run.params["N"]
 
-            tab[L] = np.array(x), np.array(y), np.array(yerr)
+                if xname == "g_param":
+                    xData.append(run.g_param)
+                else:
+                    xData.append(run.means_err[xname][0])
+                    xerrData.append(run.means_err[xname][1])
+
+                yData.append(run.means_err[yname][0])
+                yerrData.append(run.means_err[yname][1])
+            if xerrData:
+                tab[L] = np.array([xData, yData, xerrData, yerrData]).T
+            else:
+                tab[L] = np.array([xData, yData, yerrData]).T
+
+            if xfunc and not yfunc:
+                yfunc = "y"
+
+            if yfunc and not xfunc:
+                xfunc = "x"
+
+            if xfunc or yfunc:  # calculate correct error propagation
+
+                dic = arg
+                dic["L"] = L
+                dic["Ns"] = N
+                dic["x"] = "x"
+                dic["y"] = "y"
+                dic["dy"] = "dy"
+
+                if len(tab[L][0]) == 4:
+                    dic["dx"] = "dx"
+
+                x_sym = sympy.sympify(xfunc)
+                y_sym = sympy.sympify(yfunc)
+                dx_sym = FS3.errorPropagation(x_sym)
+                dy_sym = FS3.errorPropagation(y_sym)
+
+                x_sym = x_sym.subs(dic)
+                dx_sym = dx_sym.subs(dic)
+                y_sym = y_sym.subs(dic)
+                dy_sym = dy_sym.subs(dic)
+
+                for name in dx_sym.free_symbols:
+                    if str(name) not in dic.keys():
+                        dic[name] = 0
+
+                for name in dy_sym.free_symbols:
+                    if str(name) not in dic.keys():
+                        dic[name] = 0
+
+                x_sym = x_sym.subs(dic)
+                dx_sym = dx_sym.subs(dic)
+                y_sym = y_sym.subs(dic)
+                dy_sym = dy_sym.subs(dic)
+
+                x_lambda = sympy.lambdify(("x", "y"), x_sym, "numpy")
+                y_lambda = sympy.lambdify(("x", "y"), y_sym, "numpy")
+                x = x_lambda(np.array(xData), np.array(yData))
+                y = y_lambda(np.array(xData), np.array(yData))
+
+                if len(tab[L][0]) == 4:
+                    dx_lambda = sympy.lambdify(("x", "y", "dx", "dy"), dx_sym, "numpy")
+                    dy_lambda = sympy.lambdify(("x", "y", "dx", "dy"), dy_sym, "numpy")
+                    xerr = dx_lambda(
+                        np.array(xData),
+                        np.array(yData),
+                        np.array(xerrData),
+                        np.array(yerrData),
+                    )
+                    yerr = dy_lambda(
+                        np.array(xData),
+                        np.array(yData),
+                        np.array(xerrData),
+                        np.array(yerrData),
+                    )
+
+                    tab[L] = np.array([x, y, xerr, yerr]).T
+                else:
+                    dx_lambda = sympy.lambdify(("x", "y", "dy"), dx_sym, "numpy")
+                    dy_lambda = sympy.lambdify(("x", "y", "dy"), dy_sym, "numpy")
+                    xerr = dx_lambda(
+                        np.array(xData), np.array(yData), np.array(yerrData)
+                    )
+                    yerr = dy_lambda(
+                        np.array(xData), np.array(yData), np.array(yerrData)
+                    )
+
+                if np.any(xerr):
+                    tab[L] = np.array([x, y, xerr, yerr]).T
+                else:
+                    tab[L] = np.array([x, y, yerr]).T
+
+        FS3.setStyle(Llist=np.sort(list(tab), axis=0))
+        if plot:
+            xlabel = self.obs_labels[xname] + xlabel
+            ylabel = self.obs_labels[yname] + ylabel
+
+            fig, ax0 = FS3.figure(xlabel=xlabel, ylabel=ylabel)
+            FS3.setTicks(ax0, minorxTicks=2, minoryTicks=2)
+            plots = []
+            labels = []
+            for L in np.sort(list(tab), axis=0):
+                if len(tab[L][0]) == 2:  # no errorbars
+                    p = ax0.errorbar(
+                        tab[L][:, 0],
+                        tab[L][:, 1],
+                        **FS3.errorbarStyle(L),
+                        linestyle="",
+                    )
+
+                if len(tab[L][0]) == 3:  # only y errros
+                    p = ax0.errorbar(
+                        tab[L][:, 0],
+                        tab[L][:, 1],
+                        yerr=tab[L][:, 2],
+                        **FS3.errorbarStyle(L),
+                        linestyle="",
+                    )
+
+                if len(tab[L][0]) == 4:  # x and y errors
+                    p = ax0.errorbar(
+                        tab[L][:, 0],
+                        tab[L][:, 1],
+                        xerr=tab[L][:, 2],
+                        yerr=tab[L][:, 3],
+                        **FS3.errorbarStyle(L),
+                        linestyle="",
+                    )
+
+                ax0.plot(tab[L][:, 0], tab[L][:, 1], **FS3.plotStyle(L), linestyle="-")
+                plots.append(p)
+                labels.append(r"$L = %s$" % L)
+            FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=(0.74, 0.72, 0.18))
+            fig.suptitle(r"$\alpha = %.2f $" % (self.runs[0].alpha))
+            ax0.set_xscale(xscale)
+            ax0.set_yscale(yscale)
+
+            return tab, fig, ax0
 
         return tab
 
-    def plot_obs(
-        self,
-        obs_name,
-        x_factor=lambda L, N: 1.0,
-        y_factor=lambda L, N: 1.0,
-        xscale="linear",
-        yscale="linear",
-    ):
-        for L in self.L_list:
-            x = []
-            y = []
-            yerr = []
-            for run in self.L_dict[L]:
-                N = run.params["N"]
-                x.append(run.g_param * x_factor(L, N))
-                y.append(run.means_err[obs_name][0] * y_factor(L, N))
-                yerr.append(run.means_err[obs_name][1] * y_factor(L, N))
+    def select(self, LRange=[], gRange=[]):
 
-            plt.errorbar(x, y, yerr, marker="o", linestyle="-", label=f"L={L}")
-        plt.legend()
-        plt.xscale(xscale)
-        plt.yscale(yscale)
-        plt.title(r"$\alpha = %.2f $" % (self.runs[0].alpha))
-        plt.show()
+        if len(LRange) == 0:
+            LRange = np.array([-sys.maxsize - 1, sys.maxsize])
+        elif len(LRange) == 1:
+            LRange = np.array([LRange[0], sys.maxsize])
+        else:
+            LRange = np.array(LRange)
+
+        if len(gRange) == 0:
+            gRange = np.array([float("-inf"), float("inf")])
+        elif len(gRange) == 1:
+            gRange = np.array([gRange[0], float("inf")])
+        else:
+            gRange = np.array(gRange)
+
+        self.L_list, self.L_dict = self.get_L_dict()
+        self.g_list, self.g_dict = self.get_g_dict()
+
+        self.L_list = self.L_list[
+            np.where((self.L_list >= LRange[0]) & (self.L_list <= LRange[1]))
+        ]
+        self.g_list = self.g_list[
+            np.where((self.g_list >= gRange[0]) & (self.g_list <= gRange[1]))
+        ]
+
+        self.L_dict = {}
+
+        for L in self.L_list:
+            self.L_dict[L] = []
+            for run in self.runs:
+                if L == run.L and run.g_param in self.g_list:
+                    self.L_dict[L].append(run)
+            self.L_dict[L].sort(key=lambda x: (x.g_param))
+
+        self.g_dict = {}
+        g_index = 0
+
+        for g in self.g_list:
+            self.g_dict[g_index] = []
+            for run in self.runs:
+                if g == run.g_param and run.L in self.L_list:
+                    self.g_dict[g_index].append(run)
+                self.g_dict[g_index].sort(key=lambda x: (x.L))
+            g_index += 1
+
+
+############### fit data #############################
+
+
+def data_fit(data, fitFunction, start_params, fitSummary=False):
+
+    params0 = start_params + np.random.randn(len(start_params)) * 0.01
+
+    params0 = np.hstack(
+        (params0, 0.01 * np.random.randn(fitFunction.nparams() - len(start_params)))
+    )
+
+    res = FS3.fit_minimize(data, fitFunction, params=params0, **{"method": "BFGS"})
+    params, dparams, redChi2, mesg, ierr = res
+
+    if fitSummary:
+        FS3.fitSummary(fitFunction, res)
+
+    return res
+
+
+def fit_plot(data, fitFunction, fit_result, xlabel, ylabel):
+    params, dparams, redChi2, mesg, ierr = fit_result
+    var = fitFunction.unpack(params)
+
+    plots = []
+    labels = []
+    fig, ax0 = FS3.figure(xlabel=xlabel, ylabel=ylabel)
+    xrange, yrange = FS3.getDataRange(data, idx=0, margin=0.05), FS3.getDataRange(
+        data, idx=1, margin=0.05
+    )
+    yrange[1] = 1.05 * yrange[1]
+    ax0.set_xlim(xrange)
+    ax0.set_ylim(yrange)
+    FS3.setTicks(ax0, minorxTicks=2, minoryTicks=2)
+
+    for L in np.sort(list(data), axis=0):
+        yerr = None
+        xerr = None
+
+        if len(data[L]) == 3:
+            yerr = data[L][:, 2]
+
+        if len(data[L]) == 4:
+            xerr = data[L][:, 2]
+            yerr = data[L][:, 3]
+
+        p = ax0.errorbar(
+            data[L][:, 0],
+            data[L][:, 1],
+            xerr=xerr,
+            yerr=yerr,
+            **FS3.errorbarStyle(L),
+            linestyle="",
+        )
+        plots.append(p)
+        labels.append(r"$L = %s$" % L)
+        plotRange = FS3.getDataRange(data[L], idx=0, margin=0.05)
+        g = np.linspace(plotRange[0], plotRange[1], 400)
+        ax0.plot(g, fitFunction.func(g, L, params), **FS3.plotStyle(L))
+    FS3.legend(ax0, plots, labels, legendLabelBreak=7)  # loc=(0.78, 0.02, 0.18))
+    # ax0.axhline(var["a"][0], color="#dddddd", zorder=-1000)
+    # ax0.axvline(var["gc"], color="#dddddd", zorder=-1000)
+
+    # ## Data collapse
+
+    # fig, ax1 = FS3.addInset(fig, loc=3)
+    # ax1.set_xlabel(r"$(T-T_c)\, L^{1/\nu}$")
+    # dataCollapse = FS3.rescaleAxis(
+    #     data,
+    #     xfunc="(x-gc)*L**(1./nu) + c*L**(-omega/nu)",
+    #     yfunc="y",
+    #     arg={"nu": var["nu"], "gc": var["gc"], "omega": var["omega"], "c": var["c"]},
+    # )
+    # for L in np.sort(list(data), axis=0):
+    #     ax1.errorbar(
+    #         dataCollapse[L][:, 0],
+    #         dataCollapse[L][:, 1],
+    #         yerr=dataCollapse[L][:, 2],
+    #         **FS3.errorbarStyle(L),
+    #         linestyle="",
+    #     )
+    # ax1.axhline(var["a"][0], color="#dddddd")
+    # ax1.axvline(0, color="#dddddd")
+
+    return fig
 
 
 ############### fit function classes #################
@@ -332,7 +626,10 @@ class collected_runs:
 
 class f0:  # Scaling function for Binder cumulant without large finite-size effects
     def __init__(self):
-        self.vars = ["gc", "nu"]  # define the variables used in your scaling function
+        self.vars = [
+            "gc",
+            "nu",
+        ]  # define the variables used in your scaling function
         self.polyOrder = 0  # the polyomial expansion order in your scaling function
 
     def nparams(self):
@@ -351,7 +648,7 @@ class f0:  # Scaling function for Binder cumulant without large finite-size effe
 
         f = np.zeros_like(g)
         for n in range(nmax):
-            f += var["a"][n] * ((g - var["gc"]) * L ** (1.0 / var["nu"])) ** n
+            f += var["a"][n] * ((g / var["gc"] - 1) * L ** (1.0 / var["nu"])) ** n
         return f
 
 
@@ -381,7 +678,7 @@ class f1:  # Scaling function for Binder cumulant with large finite-size effects
 
         f = np.zeros_like(g)
         for n in range(nmax):
-            f += var["a"][n] * ((g - var["gc"]) * L ** (1.0 / var["nu"])) ** n
+            f += var["a"][n] * ((g / var["gc"] - 1.0) * L ** (1.0 / var["nu"])) ** n
         return f * (1 + var["c"] * L ** (-var["omega"]))
 
 
@@ -472,3 +769,143 @@ class Rg1:  # Scaling function for Renormalization with large finite-size effect
             f += var["a"][n] * (U / (1 + var["c"] * L ** (-var["omega"]))) ** n
         f = L ** (-var["eta"]) * f
         return f * (1 + var["cPrime"] * L ** (-var["omegaPrime"]))
+
+
+class f_beta_nu:
+    def __init__(self):
+        self.vars = [
+            "beta",
+            "nu",
+            "gc",
+        ]  # define the variables used in your scaling function
+        self.polyOrder = 0  # the polyomial expansion order in your scaling function
+
+    def nparams(self):
+        return len(self.vars) + np.sum(self.polyOrder) + 1
+
+    def unpack(self, params):
+        var = {}
+        for name in list(self.vars):
+            var[name] = params[self.vars.index(name)]
+        var["a"] = params[len(self.vars) : self.nparams() + 1]
+        return var
+
+    def func(self, g, L, params):
+        var = self.unpack(params)
+        nmax = len(var["a"])
+
+        f = np.zeros_like(g)
+        for n in range(nmax):
+            f += var["a"][n] * ((g / var["gc"] - 1) * L ** (1.0 / var["nu"])) ** n
+        return f * L ** (var["beta"] / var["nu"])
+
+
+class f0_dyn_z:  # Scaling function for to check dynamic exponent with rho without large finite-size effects
+    def __init__(self):
+        self.vars = [
+            "gc",
+            "nu",
+            "z",
+        ]  # define the variables used in your scaling function
+        self.polyOrder = 0  # the polyomial expansion order in your scaling function
+
+    def nparams(self):
+        return len(self.vars) + np.sum(self.polyOrder) + 1
+
+    def unpack(self, params):
+        var = {}
+        for name in list(self.vars):
+            var[name] = params[self.vars.index(name)]
+        var["a"] = params[len(self.vars) : self.nparams() + 1]
+        return var
+
+    def func(self, g, L, params):
+        var = self.unpack(params)
+        nmax = len(var["a"])
+
+        f = np.zeros_like(g)
+        for n in range(nmax):
+            f += var["a"][n] * ((g / var["gc"] - 1) * L ** (1.0 / var["nu"])) ** n
+        return f * L ** (-var["z"])
+
+
+class f_general:  # Scaling function with large finite-size effects and uncertain scaling with L^kappa
+    def __init__(self):
+        self.vars = [
+            "gc",
+            "1overnu",
+            "kappa",
+            "omega",
+            "c",
+        ]  # define the variables used in your scaling function
+        self.polyOrder = 0  # the polyomial expansion order in your scaling function
+
+    def nparams(self):
+        return len(self.vars) + np.sum(self.polyOrder) + 1
+
+    def unpack(self, params):
+        var = {}
+        for name in list(self.vars):
+            var[name] = params[self.vars.index(name)]
+        var["a"] = params[len(self.vars) : self.nparams() + 1]
+        return var
+
+    def func(self, g, L, params):
+        var = self.unpack(params)
+        nmax = len(var["a"])
+
+        f = np.zeros_like(g)
+        for n in range(nmax):
+            f += var["a"][n] * ((g - var["gc"]) * L ** (var["1overnu"])) ** n
+        return (
+            f
+            * L ** (var["kappa"] * var["1overnu"])
+            * (1 + var["c"] * L ** (-var["omega"]))
+        )
+
+
+class fitfunc:
+
+    def f_lambda(self):
+        Ls = sympy.symbols("L")
+        xs = sympy.symbols("x")
+        vars_symbols = sympy.symbols(self.vars)
+
+        p = 0
+        for n in range(self.polyOrder + 1):
+            a_n = vars_symbols[-self.polyOrder - 1 + n]
+            p += a_n * xs**n
+
+        f = sympy.Lambda(xs, p)
+
+        ns = {"f": f, "L": Ls, "x": xs}
+        for name in self.vars:
+            ns[name] = vars_symbols[self.vars.index(name)]
+
+        f = sympy.sympify(self.fstring, locals=ns)
+
+        return sympy.lambdify((xs,Ls,*vars_symbols),f,modules="numpy")
+
+    def __init__(self, fstring, vars, polyOrder):
+        self.vars = vars  # list of variable names in your scaling function
+        self.polyOrder = (
+            polyOrder  # the polyomial expansion order in your scaling function
+        )
+        self.fstring = fstring
+
+        for n in range(polyOrder + 1):
+            self.vars.append("a%d" % n)
+
+        self.fitfunc_lambda = self.f_lambda()
+
+    def nparams(self):
+        return len(self.vars)
+
+    def unpack(self, params):
+        var = {}
+        for name in list(self.vars):
+            var[name] = params[self.vars.index(name)]
+        return var
+
+    def func(self, x, L, params):
+        return self.fitfunc_lambda(x, L, *params)

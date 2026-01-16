@@ -47,7 +47,7 @@ def fit_residuals(params, sum, data, fitFunction):
             x, y, dy = data[L][:,0], data[L][:,1], data[L][:,2]
             res = np.concatenate((res, (y - fitFunction.func(x, L, params)) / dy))
         elif len(data[L][0]) == 4: # errors for x and y
-            x, dx, y, dy = data[L][:,0], data[L][:,1], data[L][:,2], data[L][:,3]
+            x, y, dx, dy = data[L][:,0], data[L][:,1], data[L][:,2], data[L][:,3]
             res = np.concatenate((res, (y - fitFunction.func(x, L, params))/np.sqrt(dx**2+dy**2)))
         else:
             sys.exit('FS3.fit_residuals: Incorrect data structure.')
@@ -256,11 +256,13 @@ def rescaleAxis(dataIn, xfunc='x', yfunc='y', xIndex=0, yIndex=1, dxIndex=None, 
 
     if xfunc != None:
         xfunc = sympy.sympify(xfunc)
-        if dxIndex != None: dxfunc = errorPropagation(xfunc)
+        if dxIndex != None:
+            dxfunc = errorPropagation(xfunc)
 
     if yfunc != None:
         yfunc = sympy.sympify(yfunc)
-        if dyIndex != None: dyfunc = errorPropagation(yfunc)
+        if dyIndex != None:
+            dyfunc = errorPropagation(yfunc)
 
     for L in list(dataOut):
         for i in range(len(dataOut[L])):
