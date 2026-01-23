@@ -237,7 +237,6 @@ class collected_runs:
         self.T0 = T0
         self.runs = []
         self.obs_names = [
-            "g_param",
             "energy",
             "mag",
             "mag_stag",
@@ -296,10 +295,10 @@ class collected_runs:
             for single_path in path:
                 self.write_to_FS3_file(single_path)
         else:
-            fname = ""
-            Path(path + "/FS3/").mkdir(parents=True, exist_ok=True)
+            filepath = path + "/FS3_format/"
+            Path(filepath).mkdir(parents=True, exist_ok=True)
             for obs_name in self.obs_names:
-                fname = path + "/FS3/" + obs_name + ".dat"
+                fname = filepath + obs_name + ".dat"
                 f = open(fname, "w")
 
                 L_index = 0
@@ -315,6 +314,7 @@ class collected_runs:
                             )
                         )
                     f.write("\n\n")
+                    L_index += 1
                 f.close()
 
     def get_x_vs_y_data(
@@ -485,7 +485,7 @@ class collected_runs:
 
             return tab, fig, ax0
 
-        return tab
+        return tab,None,None
 
     def select(self, LRange=[], gRange=[]):
 
@@ -546,7 +546,6 @@ def data_fit(data, fitFunction, start_params, fitSummary=False):
     )
 
     res = FS3.fit_minimize(data, fitFunction, params=params0, **{"method": "BFGS"})
-    params, dparams, redChi2, mesg, ierr = res
 
     if fitSummary:
         FS3.fitSummary(fitFunction, res)
@@ -576,7 +575,7 @@ def fit_plot(data, fitFunction, fit_result, xlabel, ylabel):
         if len(data[L]) == 3:
             yerr = data[L][:, 2]
 
-        if len(data[L]) == 4:
+        if len(data[L][0]) == 4:
             xerr = data[L][:, 2]
             yerr = data[L][:, 3]
 
@@ -619,6 +618,23 @@ def fit_plot(data, fitFunction, fit_result, xlabel, ylabel):
     # ax1.axvline(0, color="#dddddd")
 
     return fig
+
+def resample(data):  # resample data with Gaussian noise according to the errorbars
+    dataSample = {}
+    for L in np.sort(list(data), axis=0):
+        n = len(data[L])
+        if len(data[L][0]) == 3:  # only y errors
+            dataSample[L] = np.zeros((n, 3))
+            dataSample[L][:, 0] = data[L][:, 0]
+            dataSample[L][:, 1] = data[L][:, 1] + np.random.randn(n) * data[L][:, 2]
+            dataSample[L][:, 2] = data[L][:, 2]
+        elif len(data[L][0]) == 4:  # x and y errors
+            dataSample[L] = np.zeros((n, 4))
+            dataSample[L][:, 0] = data[L][:, 0] + np.random.randn(n) * data[L][:, 2]
+            dataSample[L][:, 1] = data[L][:, 1] + np.random.randn(n) * data[L][:, 3]
+            dataSample[L][:, 2] = data[L][:, 2]
+            dataSample[L][:, 3] = data[L][:, 3]
+    return dataSample
 
 
 ############### fit function classes #################

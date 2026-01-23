@@ -106,7 +106,7 @@ def shift(f, L, gc, nu, c, omega):
 # for file in files:
 #     path_to_dataT = file
 
-#     cl_runs = cr.collected_runs(path_to_dataT, True, cutoff=100)
+#     cl_runs = cr.collected_runs(path_to_dataT, True, cutoff=0)
 #     for run in cl_runs.runs:
 #         L = run.params["Lx"]
 #         alpha = run.params["alpha"]
@@ -163,47 +163,75 @@ def shift(f, L, gc, nu, c, omega):
 
 # plt.show()
 
-path = [f"/home/daniel/Master_thesis/Data/Leo4DataJ/runs_Js000"]
+path = ["/home/daniel/Master_thesis/Data/Leo4DataJ/runs_Js000",
+        "/home/daniel/Master_thesis/Data/runs_Js000"]
 
-cl_runs = cr.collected_runs(path, True, cutoff=100)
+cl_runs = cr.collected_runs(path, True, cutoff=5)
 
-cl_runs.select(LRange=[32, 128], gRange=[5.6, 6.0])
+# cl_runs.select(LRange=[32, 256], gRange=[1.3, 1.346])
 
-data = cl_runs.get_x_vs_y_data(
+data, _, _ = cl_runs.get_x_vs_y_data(
     xname="g_param",
-    yname="binder",
+    yname="spin_stiffness",
     xfunc="x",
-    yfunc="y",
-    plot=False,
+    yfunc="y*L**(0.23)",
+    plot=True,
     xscale="linear",
     yscale="linear",
     xlabel="",
     ylabel="",
 )
 
+data2, _, _ = cl_runs.get_x_vs_y_data(
+    xname="g_param",
+    yname="binder",
+    xfunc="x",
+    yfunc="y",
+    plot=True,
+    xscale="linear",
+    yscale="linear",
+    xlabel="",
+    ylabel="",
+)
+plt.show()
+crossings0 = FS3.crossingPoints(data, dLfunc="2*L")
+crossings2 = FS3.crossingPoints(data2, dLfunc="2*L")
+# crossings2 = FS3.crossingPoints(data, dLfunc="4/3*L")
+
+# print(crossings1,crossings2)
+
+plt.plot(1/crossings0[0][:, 0], crossings0[1][:, 0], color="green", label="rho")
+# plt.scatter(crossings1[0][:,0], crossings1[1][:,0], color="red", label="3/2 L")
+plt.plot(1/crossings2[0][:,0], crossings2[1][:,0], color="blue", label="binder")
+plt.show()
 if True:
     fitFunc = cr.fitfunc(
         fstring="f((x/gc - 1)*L**(1/nu))*(1 + c*L**(-omega))",
         vars=["gc", "nu", "c", "omega"],
-        polyOrder=2,
+        polyOrder=1,
     )
 else:
     fitFunc = cr.f1()
 
-# x = np.linspace(5.6, 6.0, 1000)
-
-# start = time.perf_counter()
-# for n in range(100):
-#     cr.data_fit(data, fitFunc, polyOrder=2, start_params=[5.8, 0.75],fitSummary=False)
-
-# stop = time.perf_counter()
-# print(f"Time elapsed for 10000 evaluations: {stop - start} seconds")
-
-fit_res = cr.data_fit(data, fitFunc, polyOrder=2, start_params=[5.8, 0.75])
-params, dparams, redChi2, mesg, ierr = fit_res
-var = fitFunc.unpack(params)
-dvar = fitFunc.unpack(dparams)
-
-fig = cr.fit_plot(data, fitFunc, fit_res, xlabel=r"$J^{\perp}$", ylabel=r"$U_2$")
+# fit_res = cr.data_fit(data, fitFunc, start_params=[1.342,1.0,10,2.0],fitSummary=True)
+# fig = cr.fit_plot(data, fitFunc, fit_res, xlabel=r"$J^{\perp}$", ylabel=r"$U_2$")
 
 plt.show()
+
+# # x = np.linspace(5.6, 6.0, 1000)
+
+# # start = time.perf_counter()
+# # for n in range(100):
+# #     cr.data_fit(data, fitFunc, polyOrder=2, start_params=[5.8, 0.75],fitSummary=False)
+
+# # stop = time.perf_counter()
+# # print(f"Time elapsed for 10000 evaluations: {stop - start} seconds")
+
+# fit_res = cr.data_fit(data, fitFunc, polyOrder=2, start_params=[5.8, 0.75])
+# params, dparams, redChi2, mesg, ierr = fit_res
+# var = fitFunc.unpack(params)
+# dvar = fitFunc.unpack(dparams)
+
+# fig = cr.fit_plot(data, fitFunc, fit_res, xlabel=r"$J^{\perp}$", ylabel=r"$U_2$")
+
+# plt.show()
