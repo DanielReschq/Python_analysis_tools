@@ -84,8 +84,11 @@ def poly(x, *params):
     return f
 
 
-def square(x, a, b, c):
-    return b * x * c
+def poly_derivative(x, *params):
+    f = 0
+    for n in range(len(params)):
+        f += n * params[n] * x ** (n - 1)
+    return f
 
 
 def log(x, a, b):
@@ -110,6 +113,8 @@ def gauss_fit(x, mean, std_err):
         * np.exp(-0.5 * ((x - mean) / std_err) ** 2)
     )
 
+def powerlaw(x,b,omega):
+    return 5.79559 + b*x**(-omega)
 
 fitFunc = cr.fitfunc(
     fstring="f((x/gc - 1)*L**(1/nu))*(1 + c*L**(-omega))",
@@ -142,9 +147,9 @@ fitFunc = cr.fitfunc(
 #     dvar = fitFunc.unpack(dparams)
 
 
-for T in np.linspace(2.94-0.012,2.94+0.012,13):
-    print("%.3f"%T,end=",")
-print("\n")
+# for T in np.linspace(2.94-0.012,2.94+0.012,13):
+#     print("%.3f"%T,end=",")
+# print("\n")
 
 gc_binder = np.array(
     [
@@ -166,21 +171,66 @@ gc_rho = np.array(
     ]
 )
 
-
-def square(x, a, b, c):
-    return a * x**2 + b * x + c
-
-path = [
-        "/home/daniel/Leo4Data/runs_Js200/",
-        ]
+path = ["/home/daniel/Master_thesis/Data/Leo4DataJ/runs_Js000"]
 cl_runs = cr.collected_runs(path, True, cutoff=100)
 
 data, binder_fig, binder_ax = cl_runs.get_x_vs_y_data(
     xname="g_param",
     yname="binder",
     yfunc="y",
-    plot=True,
+    plot=False,
 )
 
+params = {}
 
+for L in list(data):
+    params[L], pcov = sc.optimize.curve_fit(
+        poly, data[L][:, 0], data[L][:, 1], p0=np.random.randn(4)
+    )
+
+for k in ["2.0", "1.5", "4/3"]:
+    L_list, cp_list = FS3.crossingPoints(data, order=2, dLfunc=k + "*L")
+
+    nu = []
+    gc_List = []
+    LList = []
+
+    for i in range(len(L_list)):
+        L = L_list[i, 0]
+        kL = L_list[i, 1]
+        gc = cp_list[i, 0]
+
+        k_float = kL / L
+
+        LList.append(L)
+        gc_List.append(gc)
+
+        nu.append(
+            1.0
+            / np.log(k_float)
+            * np.log(poly_derivative(gc, *params[kL]) / poly_derivative(gc, *params[L]))
+        )
+
+    LList = np.array(LList)
+    gc_List = np.array(gc_List)
+
+    plt.scatter(LList,gc_List)
+
+    x = np.log(LList)
+    y = np.log((5.79559-gc_List))
+
+    p = np.polyfit(x,y,1)
+
+    Lspace = np.linspace(32,256,100)
+
+    plt.plot(Lspace,5.79559-np.exp(p[1])*Lspace**(p[0]))
+
+    params_power,_ = sc.optimize.curve_fit(powerlaw,LList,gc_List)
+
+    plt.plot(Lspace,powerlaw(Lspace,*params_power),ls = "--")
+
+    # print(k,p,np.exp(p[1]))
+
+#plt.xscale("log")
+#plt.yscale("log")
 plt.show()
