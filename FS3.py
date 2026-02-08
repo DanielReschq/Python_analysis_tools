@@ -9,6 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.ticker as ticker
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import sympy
 import copy
 import errno
@@ -147,7 +148,7 @@ def fit_residuals(params, sum, data, fitFunction):
         res.extend(r)
 
     if sum:
-        return np.sum(np.array(res)**2)
+        return np.sum(np.array(res) ** 2)
     else:
         return np.array(res)
 
@@ -635,6 +636,8 @@ def figure(figSize=(7.7, 5.6), xlabel=None, ylabel=None):
     if ylabel != None:
         ax.set_ylabel(ylabel)
 
+    # fig.set_constrained_layout(True)
+
     return fig, ax
 
 
@@ -685,25 +688,37 @@ def legend(ax, plots, labels, legendLabelBreak=3, loc=(0.00, 0.02, 0.2), isInset
 
 
 # -----------------------------------------------------------------------------------------
-def addInset(fig, width=0.35, height=0.35, loc=0, xlabel="", ylabel=""):
-
+def addInset(fig, width="35%", height="35%", loc=0, xlabel="", ylabel=""):
+    ax = fig.get_axes()[0]
     if loc == 0:
-        ax = fig.add_axes([0.14, 0.865 - height, width, height])
-        ax.xaxis.set_label_position("bottom")
-        ax.yaxis.set_label_position("right")
-        ax.tick_params(
+        axins = inset_axes(
+            ax,
+            width=width,
+            height=height,
+            loc="upper left",
+            borderpad=0.8,
+        )
+        axins.xaxis.set_label_position("bottom")
+        axins.yaxis.set_label_position("right")
+        axins.tick_params(
             labelleft=False,
             labelright=True,
             labeltop=False,
             labelbottom=True,
             labelsize=int(mpl.rcParams["xtick.labelsize"] * 0.8),
         )
-        ax.xaxis.labelpad = -2
+        axins.xaxis.labelpad = -2
     elif loc == 1:
-        ax = fig.add_axes([0.14, 0.14, width, height])
-        ax.xaxis.set_label_position("top")
-        ax.yaxis.set_label_position("right")
-        ax.tick_params(
+        axins = inset_axes(
+            ax,
+            width=width,
+            height=height,
+            loc="lower left",
+            borderpad=0.8,
+        )
+        axins.xaxis.set_label_position("top")
+        axins.yaxis.set_label_position("right")
+        axins.tick_params(
             labelleft=False,
             labelright=True,
             labeltop=True,
@@ -711,10 +726,16 @@ def addInset(fig, width=0.35, height=0.35, loc=0, xlabel="", ylabel=""):
             labelsize=int(mpl.rcParams["xtick.labelsize"] * 0.8),
         )
     elif loc == 2:
-        ax = fig.add_axes([0.89 - width, 0.14, width, height])
-        ax.xaxis.set_label_position("top")
-        ax.yaxis.set_label_position("left")
-        ax.tick_params(
+        axins = inset_axes(
+            ax,
+            width=width,
+            height=height,
+            loc="lower right",
+            borderpad=0.8,
+        )
+        axins.xaxis.set_label_position("top")
+        axins.yaxis.set_label_position("left")
+        axins.tick_params(
             labelleft=True,
             labelright=False,
             labeltop=True,
@@ -722,26 +743,32 @@ def addInset(fig, width=0.35, height=0.35, loc=0, xlabel="", ylabel=""):
             labelsize=int(mpl.rcParams["xtick.labelsize"] * 0.8),
         )
     elif loc == 3:
-        ax = fig.add_axes([0.89 - width, 0.865 - height, width, height])
-        ax.xaxis.set_label_position("bottom")
-        ax.yaxis.set_label_position("left")
-        ax.tick_params(
+        axins = inset_axes(
+            ax,
+            width=width,
+            height=height,
+            loc="upper right",
+            borderpad=0.8,
+        )
+        axins.xaxis.set_label_position("bottom")
+        axins.yaxis.set_label_position("left")
+        axins.tick_params(
             labelleft=True,
             labelright=False,
             labeltop=False,
             labelbottom=True,
             labelsize=int(mpl.rcParams["xtick.labelsize"] * 0.8),
         )
-        ax.xaxis.labelpad = -2
+        axins.xaxis.labelpad = -2
     else:
         sys.exit(
             "FS3.addInset: valid values for loc are: 0 (top left), 1 (bottom left), 2 (bottom right), 3 (top right)."
         )
 
-    ax.set_xlabel(xlabel, fontsize=int(mpl.rcParams["axes.labelsize"] * 0.8))
-    ax.set_ylabel(ylabel, fontsize=int(mpl.rcParams["axes.labelsize"] * 0.8))
+    axins.set_xlabel(xlabel, fontsize=int(mpl.rcParams["axes.labelsize"] * 0.8))
+    axins.set_ylabel(ylabel, fontsize=int(mpl.rcParams["axes.labelsize"] * 0.8))
 
-    return fig, ax
+    return fig, axins
 
 
 # =========================================================================================

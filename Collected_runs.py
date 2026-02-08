@@ -1,4 +1,5 @@
 import numpy as np
+import scipy as sp
 import matplotlib.pyplot as plt
 import pandas as pd
 import glob
@@ -7,8 +8,7 @@ from pathlib import Path
 import sympy
 import FS3
 import sys
-
-# from matplotlib.lines import Line2D
+import matplotlib as mpl
 import struct
 
 
@@ -86,6 +86,14 @@ def get_grid(filename):
         grid = {"n_bonds": n, "bonds": bonds, "bond_strength": bond_strength}
 
         return grid
+
+
+def gauss_fit(x, mean, std_err):
+    return (
+        1.0
+        / (np.sqrt(2 * np.pi) * std_err)
+        * np.exp(-0.5 * ((x - mean) / std_err) ** 2)
+    )
 
 
 class single_run:
@@ -478,14 +486,14 @@ class collected_runs:
                 ax0.plot(tab[L][:, 0], tab[L][:, 1], **FS3.plotStyle(L), linestyle="-")
                 plots.append(p)
                 labels.append(r"$L = %s$" % L)
-            FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=(0.74, 0.72, 0.18))
+            FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=(0.2, 0.2, 0.18))
             fig.suptitle(r"$\alpha = %.2f $" % (self.runs[0].alpha))
             ax0.set_xscale(xscale)
             ax0.set_yscale(yscale)
 
             return tab, fig, ax0
 
-        return tab,None,None
+        return tab, None, None
 
     def select(self, LRange=[], gRange=[]):
 
@@ -537,8 +545,7 @@ class collected_runs:
 ############### fit data #############################
 
 
-def data_fit(data, fitFunction, start_params, fitSummary=False):
-
+def fit_data(data, fitFunction, start_params, fitSummary=False):
     params0 = start_params + np.random.randn(len(start_params)) * 0.01
 
     params0 = np.hstack(
@@ -553,8 +560,10 @@ def data_fit(data, fitFunction, start_params, fitSummary=False):
     return res
 
 
-def fit_plot(data, fitFunction, fit_result, xlabel, ylabel):
-    params, dparams, redChi2, mesg, ierr = fit_result
+def plot_fit(
+    data, fitFunction, fitResult, xlabel, ylabel, loc_legend=(0.78, 0.02, 0.18)
+):
+    params, dparams, redChi2, mesg, ierr = fitResult
     var = fitFunction.unpack(params)
 
     plots = []
@@ -592,32 +601,53 @@ def fit_plot(data, fitFunction, fit_result, xlabel, ylabel):
         plotRange = FS3.getDataRange(data[L], idx=0, margin=0.05)
         g = np.linspace(plotRange[0], plotRange[1], 400)
         ax0.plot(g, fitFunction.func(g, L, params), **FS3.plotStyle(L))
-    FS3.legend(ax0, plots, labels, legendLabelBreak=7)  # loc=(0.78, 0.02, 0.18))
+    FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=loc_legend)
     # ax0.axhline(var["a"][0], color="#dddddd", zorder=-1000)
     # ax0.axvline(var["gc"], color="#dddddd", zorder=-1000)
 
-    # ## Data collapse
+    return fig
 
-    # fig, ax1 = FS3.addInset(fig, loc=3)
-    # ax1.set_xlabel(r"$(T-T_c)\, L^{1/\nu}$")
-    # dataCollapse = FS3.rescaleAxis(
-    #     data,
-    #     xfunc="(x-gc)*L**(1./nu) + c*L**(-omega/nu)",
-    #     yfunc="y",
-    #     arg={"nu": var["nu"], "gc": var["gc"], "omega": var["omega"], "c": var["c"]},
-    # )
-    # for L in np.sort(list(data), axis=0):
-    #     ax1.errorbar(
-    #         dataCollapse[L][:, 0],
-    #         dataCollapse[L][:, 1],
-    #         yerr=dataCollapse[L][:, 2],
-    #         **FS3.errorbarStyle(L),
-    #         linestyle="",
-    #     )
-    # ax1.axhline(var["a"][0], color="#dddddd")
-    # ax1.axvline(0, color="#dddddd")
+
+def plot_DataCollapse(
+    dataCollapse, fitFunction, fitResult, xlabel="", ylabel="", insetFigure=None, loc=3
+):
+    params, dparams, redChi2, mesg, ierr = fitResult
+    var = fitFunction.unpack(params)
+
+    xmin = float("inf")
+    xmax = -float("inf")
+    ymin = float("inf")
+    ymax = -float("inf")
+    for L in list(dataCollapse):
+        xmin = min(np.min(dataCollapse[L][:, 0]), xmin)
+        xmax = max(np.max(dataCollapse[L][:, 0]), xmax)
+
+        ymin = min(np.min(dataCollapse[L][:, 1]), ymin)
+        ymax = max(np.max(dataCollapse[L][:, 1]), ymax)
+
+    x = np.linspace(xmin, xmax, 400)
+    y = fitFunction.poly(x, params)
+
+    if insetFigure:
+        fig, ax1 = FS3.addInset(insetFigure, loc=loc, xlabel=xlabel, ylabel=ylabel)
+    else:
+        fig, ax1 = FS3.figure()
+
+    ax1.plot(x, y, color="black")
+
+    for L in np.sort(list(dataCollapse), axis=0):
+        ax1.errorbar(
+            dataCollapse[L][:, 0],
+            dataCollapse[L][:, 1],
+            yerr=dataCollapse[L][:, 2],
+            **FS3.errorbarStyle(L),
+            linestyle="",
+        )
+        # ax1.axhline(var["a"][0], color="#dddddd")
+        # ax1.axvline(0, color="#dddddd")
 
     return fig
+
 
 def resample(data):  # resample data with Gaussian noise according to the errorbars
     dataSample = {}
@@ -636,6 +666,65 @@ def resample(data):  # resample data with Gaussian noise according to the errorb
             dataSample[L][:, 3] = data[L][:, 3]
     return dataSample
 
+
+def scatter_histograms(xData, yData, chi2, num_bins, maxChi, xlabel=None, ylabel=None):
+    fig = plt.figure()
+    grid_space = mpl.gridspec.GridSpec(
+        2, 2, wspace=0.1, hspace=0.1, height_ratios=[1, 1], figure=fig
+    )
+
+    ax_scatter = fig.add_subplot(grid_space[1, 0])
+    ax_xhist = fig.add_subplot(grid_space[0, 0], sharex=ax_scatter)
+    ax_yhist = fig.add_subplot(grid_space[1, 1], sharey=ax_scatter)
+    # ax_cbar = fig.add_subplot(grid_space[2, 0])
+
+    ax_xhist.tick_params(
+        axis="both", labelbottom=False, labeltop=True, labelleft=True, labelright=False
+    )
+    ax_yhist.tick_params(
+        axis="both", labelbottom=True, labeltop=False, labelleft=False, labelright=True
+    )
+
+    index_small_chi = np.where(chi2 < maxChi)[0]
+
+    ax_scatter.scatter(xData, yData, alpha=0.2, color="blue")
+    xData = xData[index_small_chi]
+    yData = yData[index_small_chi]
+
+    xmin, xmax = min(xData), max(xData)
+    ymin, ymax = min(yData), max(yData)
+
+    scatter = ax_scatter.scatter(xData, yData, alpha=0.5, color="red")
+
+    # cbar = plt.colorbar(scatter, cax=ax_cbar, orientation="horizontal")
+    # cbar.set_label(r"$\chi^2$", loc="center")
+    # ax_cbar.tick_params(axis="y", labelleft=True, labelright=False)
+    ax_scatter.set_xlim([xmin, xmax])
+    ax_scatter.set_ylim([ymin, ymax])
+    ax_scatter.set_xlabel(xlabel)
+    ax_scatter.set_ylabel(ylabel)
+    # fig.subplots_adjust(0,0,1,1,0,0)
+    numx, binx, patchesx = ax_xhist.hist(xData, num_bins, [xmin, xmax], density=True)
+    numy, biny, patchesy = ax_yhist.hist(
+        yData, num_bins, [ymin, ymax], density=True, orientation="horizontal"
+    )
+
+    midppointsx = 0.5 * (binx[:-1] + binx[1:])
+    midppointsy = 0.5 * (biny[:-1] + biny[1:])
+
+    paramsx, pcovx = sp.optimize.curve_fit(
+        gauss_fit, midppointsx, numx, p0=[np.mean([xmin, xmax]), 0.01]
+    )
+    x = np.linspace(xmin, xmax, 400)
+    ax_xhist.plot(x, gauss_fit(x, *paramsx), color="r")
+
+    paramsy, pcovy = sp.optimize.curve_fit(
+        gauss_fit, midppointsy, numy, p0=[np.mean([ymin, ymax]), 0.01]
+    )
+    y = np.linspace(ymin, ymax, 400)
+    ax_yhist.plot(gauss_fit(y, *paramsy), y, color="r")
+
+    return paramsx, paramsy
 
 ############### fit function classes #################
 
@@ -900,7 +989,7 @@ class fitfunc:
 
         f = sympy.sympify(self.fstring, locals=ns)
 
-        return sympy.lambdify((xs,Ls,*vars_symbols),f,modules="numpy")
+        return sympy.lambdify((xs, Ls, *vars_symbols), f, modules="numpy")
 
     def __init__(self, fstring, vars, polyOrder):
         self.vars = vars  # list of variable names in your scaling function
@@ -925,3 +1014,10 @@ class fitfunc:
 
     def func(self, x, L, params):
         return self.fitfunc_lambda(x, L, *params)
+
+    def poly(self, x, params):
+        f = 0
+        for n in range(self.polyOrder + 1):
+            index = self.nparams() - (self.polyOrder + 1) + n
+            f += params[index] * x**n
+        return f
