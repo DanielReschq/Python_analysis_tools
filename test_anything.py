@@ -113,124 +113,67 @@ def gauss_fit(x, mean, std_err):
         * np.exp(-0.5 * ((x - mean) / std_err) ** 2)
     )
 
-def powerlaw(x,b,omega):
-    return 5.79559 + b*x**(-omega)
 
-fitFunc = cr.fitfunc(
-    fstring="f((x/gc - 1)*L**(1/nu))*(1 + c*L**(-omega))",
-    vars=["gc", "nu", "omega", "c"],
-    polyOrder=2,
-)
-
-# for path in glob.glob("/home/daniel/Master_thesis/Data/Leo4DataT/*"):
-#     cl_runs = cr.collected_runs(path, False, cutoff=0)
-#     # for run in cl_runs.runs:
-#     #    print(run.alpha, run.g_param, run.params["Lx"], len(run.data["bins"]))
-
-#     data, _, _ = cl_runs.get_x_vs_y_data(
-#         xname="g_param",
-#         yname="binder",
-#         plot=True,
-#         xscale="linear",
-#         yscale="linear",
-#     )
-#     index = parameter_dictT["sigma"].index(path.partition("/runs")[-1])
-
-#     fit_res = cr.fit_data(
-#         data,
-#         fitFunc,
-#         start_params=[parameter_dictT["gc"][index], parameter_dictT["nu"][index]],
-#         fitSummary=True,
-#     )
-#     params, dparams, redChi2, mesg, ierr = fit_res
-#     var = fitFunc.unpack(params)
-#     dvar = fitFunc.unpack(dparams)
+def powerlaw(x, a, k):
+    return k * x**a
 
 
-# for T in np.linspace(2.94-0.012,2.94+0.012,13):
-#     print("%.3f"%T,end=",")
-# print("\n")
+def lambda_k(k, L, alpha, J_perp):
+    lamb = 0.0
+    for x in np.arange(1, L//2+1):
+        lamb += 2/(x**alpha) * (np.cos(k[0]*x) + np.cos(k[1]*x))
+    return 0.5*(lamb + J_perp)
 
-gc_binder = np.array(
-    [
-        [1.500000, 9.987089, 0.000514],
-        [2.000000, 5.795590, 0.000142],
-        [2.500000, 4.330173, 0.000168],
-        [3.000000, 3.595143, 0.000043],
-        [3.500000, 3.183531, 0.000064],
-    ]
-)
+def epsilon_k(k, L, alpha,J_perp):
+    eps = 0.0
+    for x in np.arange(1, L//2+1):
+        eps += 4/(x**alpha)
+    return 0.5*(eps + J_perp)
 
-gc_rho = np.array(
-    [
-        [1.500000, 9.993461, 0.001125],
-        [2.000000, 5.794825, 0.000169],
-        [2.500000, 4.329952, 0.000046],
-        [3.000000, 3.593966, 0.000052],
-        [3.500000, 3.182803, 0.000073],
-    ]
-)
+def epsilon_0(L, alpha, J_perp):
+    return -1.5*epsilon_k((0,0), L, alpha,J_perp)
 
-path = ["/home/daniel/Master_thesis/Data/Leo4DataJ/runs_Js000"]
-cl_runs = cr.collected_runs(path, True, cutoff=100)
+def energy(k,L, alpha, J_perp):
+    eps0 = epsilon_0(L, alpha, J_perp)
+    epsk = epsilon_k((0, 0), L, alpha,J_perp)
+    lamb = lambda_k(k, L, alpha,J_perp)
+    return np.sqrt(epsk**2 - lamb**2)+eps0
 
-data, binder_fig, binder_ax = cl_runs.get_x_vs_y_data(
-    xname="g_param",
-    yname="binder",
-    yfunc="y",
-    plot=False,
-)
+# Sample data
+x = np.linspace(0, 10, 100)
+y1 = np.sin(x)
+y2 = np.cos(x)
 
-params = {}
+fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-for L in list(data):
-    params[L], pcov = sc.optimize.curve_fit(
-        poly, data[L][:, 0], data[L][:, 1], p0=np.random.randn(4)
-    )
+# Plot on both subplots
+axes[0].plot(x, y1, label='sin(x)')
+axes[0].plot(x, y2, label='cos(x)')
+axes[0].set_title("Left plot")
 
-for k in ["2.0", "1.5", "4/3"]:
-    L_list, cp_list = FS3.crossingPoints(data, order=2, dLfunc=k + "*L")
+axes[1].plot(x, y1**2, label='sin^2(x)')
+axes[1].plot(x, y2**2, label='cos^2(x)')
+axes[1].set_title("Right plot")
 
-    nu = []
-    gc_List = []
-    LList = []
+# Collect handles + labels from both axes
+handles, labels = [], []
+for ax in axes:
+    h, l = ax.get_legend_handles_labels()
+    handles.extend(h)
+    labels.extend(l)
 
-    for i in range(len(L_list)):
-        L = L_list[i, 0]
-        kL = L_list[i, 1]
-        gc = cp_list[i, 0]
+# Create ONE legend outside the figure
+fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1.02, 0.5))
 
-        k_float = kL / L
+# Make space on the right for the legend
+fig.subplots_adjust(right=0.8)
 
-        LList.append(L)
-        gc_List.append(gc)
-
-        nu.append(
-            1.0
-            / np.log(k_float)
-            * np.log(poly_derivative(gc, *params[kL]) / poly_derivative(gc, *params[L]))
-        )
-
-    LList = np.array(LList)
-    gc_List = np.array(gc_List)
-
-    plt.scatter(LList,gc_List)
-
-    x = np.log(LList)
-    y = np.log((5.79559-gc_List))
-
-    p = np.polyfit(x,y,1)
-
-    Lspace = np.linspace(32,256,100)
-
-    plt.plot(Lspace,5.79559-np.exp(p[1])*Lspace**(p[0]))
-
-    params_power,_ = sc.optimize.curve_fit(powerlaw,LList,gc_List)
-
-    plt.plot(Lspace,powerlaw(Lspace,*params_power),ls = "--")
-
-    # print(k,p,np.exp(p[1]))
-
-#plt.xscale("log")
-#plt.yscale("log")
 plt.show()
+
+
+
+
+x = np.linspace(2.78, 2.806, 14)
+
+for i in x:
+    print(f"%.3f"  %i,end=",")

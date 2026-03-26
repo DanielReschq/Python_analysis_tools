@@ -303,7 +303,7 @@ class collected_runs:
             for single_path in path:
                 self.write_to_FS3_file(single_path)
         else:
-            filepath = path + "/FS3_format/"
+            filepath = path
             Path(filepath).mkdir(parents=True, exist_ok=True)
             for obs_name in self.obs_names:
                 fname = filepath + obs_name + ".dat"
@@ -429,7 +429,6 @@ class collected_runs:
                         np.array(xerrData),
                         np.array(yerrData),
                     )
-
                     tab[L] = np.array([x, y, xerr, yerr]).T
                 else:
                     dx_lambda = sympy.lambdify(("x", "y", "dy"), dx_sym, "numpy")
