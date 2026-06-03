@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, FormatStrFormatter
 import pandas as pd
 import glob
 import tomllib
@@ -545,6 +546,7 @@ class collected_runs:
 
 
 def fit_data(data, fitFunction, start_params, fitSummary=False):
+
     params0 = start_params + np.random.randn(len(start_params)) * 0.01
 
     params0 = np.hstack(
@@ -560,18 +562,15 @@ def fit_data(data, fitFunction, start_params, fitSummary=False):
 
 
 def plot_fit(
-    data, fitFunction, fitResult, xlabel, ylabel, loc_legend=(0.78, 0.02, 0.18)
+    data, fitFunction, params, xlabel, ylabel, loc_legend=(0.78, 0.02, 0.18)
 ):
-    params, dparams, redChi2, mesg, ierr = fitResult
-    var = fitFunction.unpack(params)
-
     plots = []
     labels = []
     fig, ax0 = FS3.figure(xlabel=xlabel, ylabel=ylabel)
     xrange, yrange = FS3.getDataRange(data, idx=0, margin=0.05), FS3.getDataRange(
         data, idx=1, margin=0.05
     )
-    yrange[1] = 1.05 * yrange[1]
+    #yrange[1] = 1.05 * yrange[1]
     ax0.set_xlim(xrange)
     ax0.set_ylim(yrange)
     FS3.setTicks(ax0, minorxTicks=2, minoryTicks=2)
@@ -604,7 +603,7 @@ def plot_fit(
     # ax0.axhline(var["a"][0], color="#dddddd", zorder=-1000)
     # ax0.axvline(var["gc"], color="#dddddd", zorder=-1000)
 
-    return fig
+    return fig,ax0
 
 
 def plot_DataCollapse(
@@ -645,7 +644,7 @@ def plot_DataCollapse(
         # ax1.axhline(var["a"][0], color="#dddddd")
         # ax1.axvline(0, color="#dddddd")
 
-    return fig
+    return fig,ax1
 
 
 def resample(data):  # resample data with Gaussian noise according to the errorbars
@@ -666,8 +665,8 @@ def resample(data):  # resample data with Gaussian noise according to the errorb
     return dataSample
 
 
-def scatter_histograms(xData, yData, chi2, num_bins, maxChi, xlabel=None, ylabel=None):
-    fig = plt.figure()
+def scatter_histograms(xData, yData, x_steps,y_steps, x_range, y_range, chi2, num_bins, xlabel=None, ylabel=None):
+    fig = plt.figure(figsize=(8, 8))
     grid_space = mpl.gridspec.GridSpec(
         2, 2, wspace=0.1, hspace=0.1, height_ratios=[1, 1], figure=fig
     )
@@ -675,7 +674,8 @@ def scatter_histograms(xData, yData, chi2, num_bins, maxChi, xlabel=None, ylabel
     ax_scatter = fig.add_subplot(grid_space[1, 0])
     ax_xhist = fig.add_subplot(grid_space[0, 0], sharex=ax_scatter)
     ax_yhist = fig.add_subplot(grid_space[1, 1], sharey=ax_scatter)
-    # ax_cbar = fig.add_subplot(grid_space[2, 0])
+    ax_legend = fig.add_subplot(grid_space[0, 1])
+    ax_legend.axis("off")  # hide axes
 
     ax_xhist.tick_params(
         axis="both", labelbottom=False, labeltop=True, labelleft=True, labelright=False
@@ -684,46 +684,76 @@ def scatter_histograms(xData, yData, chi2, num_bins, maxChi, xlabel=None, ylabel
         axis="both", labelbottom=True, labeltop=False, labelleft=False, labelright=True
     )
 
-    index_small_chi = np.where(chi2 < maxChi)[0]
+    imin = np.argmin(chi2)
+    xData_min = xData[imin]
+    yData_min = yData[imin]
 
-    ax_scatter.scatter(xData, yData, alpha=0.2, color="blue")
-    xData = xData[index_small_chi]
-    yData = yData[index_small_chi]
+    ixData = xData.where((xData >= x_range[0]) & (xData <= x_range[1]))
+    iyData = yData.where((yData >= y_range[0]) & (yData <= y_range[1]))
 
-    xmin, xmax = min(xData), max(xData)
-    ymin, ymax = min(yData), max(yData)
+    iZoom = (ixData.notna()) & (iyData.notna())
 
-    scatter = ax_scatter.scatter(xData, yData, alpha=0.5, color="red")
+    xData = xData[iZoom]
+    yData = yData[iZoom]
 
-    # cbar = plt.colorbar(scatter, cax=ax_cbar, orientation="horizontal")
+    #x_range = [np.floor((xData[imin])*int(1/x_steps))*x_steps-0.5*x_steps, np.ceil((xData[imin])*int(1/x_steps))*x_steps+0.5*x_steps]
+    #y_range = [np.floor((yData[imin])*int(1/y_steps))*y_steps-0.5*y_steps, np.ceil((yData[imin])*int(1/y_steps))*y_steps+0.5*y_steps]
+    scatter = ax_scatter.hist2d(xData, yData, bins=num_bins, range=[x_range, y_range], cmap="Blues")
+    
+    ax_scatter.xaxis.set_major_locator(MultipleLocator(x_steps))
+    ax_scatter.xaxis.set_minor_locator(MultipleLocator(x_steps/2))
+    ax_scatter.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+    ax_scatter.yaxis.set_major_locator(MultipleLocator(y_steps))
+    ax_scatter.yaxis.set_minor_locator(MultipleLocator(y_steps/2))
+    ax_scatter.yaxis.set_major_formatter(FormatStrFormatter('%.4f'))
+    #fig.colorbar(scatter[2], ax_scatter,orientation="horizontal")
     # cbar.set_label(r"$\chi^2$", loc="center")
     # ax_cbar.tick_params(axis="y", labelleft=True, labelright=False)
-    ax_scatter.set_xlim([xmin, xmax])
-    ax_scatter.set_ylim([ymin, ymax])
+    ax_scatter.set_xlim(x_range)
+    ax_scatter.set_ylim(y_range)
     ax_scatter.set_xlabel(xlabel)
     ax_scatter.set_ylabel(ylabel)
-    # fig.subplots_adjust(0,0,1,1,0,0)
-    numx, binx, patchesx = ax_xhist.hist(xData, num_bins, [xmin, xmax], density=True)
+
+    ax_xhist.set_ylabel("counts")
+    ax_yhist.set_xlabel("counts")
+
+    plots = []
+    labels = []
+
+    p = ax_scatter.errorbar(xData_min, yData_min, color="red", marker="o",ls="--")
+    plots.append(p)
+    labels.append(r"minimum $\chi^2$:" +"\n" +r"%s$_{min} = %.3f$"%(xlabel, xData_min) + "\n" + r"%s$_{min} = %.4f$" %(ylabel, yData_min))
+
+    numx, binx, patchesx = ax_xhist.hist(xData, num_bins, x_range, density=True)
     numy, biny, patchesy = ax_yhist.hist(
-        yData, num_bins, [ymin, ymax], density=True, orientation="horizontal"
+        yData, num_bins, y_range, density=True, orientation="horizontal"
     )
 
     midppointsx = 0.5 * (binx[:-1] + binx[1:])
     midppointsy = 0.5 * (biny[:-1] + biny[1:])
 
     paramsx, pcovx = sp.optimize.curve_fit(
-        gauss_fit, midppointsx, numx, p0=[np.mean([xmin, xmax]), 0.01]
+        gauss_fit, midppointsx, numx, p0=[xData_min, 0.01]
     )
-    x = np.linspace(xmin, xmax, 400)
-    ax_xhist.plot(x, gauss_fit(x, *paramsx), color="r")
+    x = np.linspace(x_range[0], x_range[1], 400)
+    p = ax_xhist.plot(x, gauss_fit(x, *paramsx), color="r")[0]
+    plots.append(p)
+    ax_xhist.vlines(xData_min, 0, gauss_fit(xData_min, *paramsx), color="red", ls="--")
+    ax_scatter.vlines(xData_min, yData_min, ax_scatter.get_ylim()[1], color="red", ls="--")
 
     paramsy, pcovy = sp.optimize.curve_fit(
-        gauss_fit, midppointsy, numy, p0=[np.mean([ymin, ymax]), 0.01]
+        gauss_fit, midppointsy, numy, p0=[yData_min, 0.01]
     )
-    y = np.linspace(ymin, ymax, 400)
+    y = np.linspace(y_range[0], y_range[1], 400)
     ax_yhist.plot(gauss_fit(y, *paramsy), y, color="r")
+    ax_yhist.hlines(yData_min, 0, gauss_fit(yData_min, *paramsy), color="red", ls="--")
+    ax_scatter.hlines(yData_min, xData_min, ax_scatter.get_xlim()[1], color="red", ls="--")
 
-    return paramsx, paramsy
+    labels.append(r"gaussian fit of histogram:" + "\n" + r"%s $= %s$" % (xlabel, FS3.errText(paramsx[0], paramsx[1])) + "\n" + r"%s $= %s$" % (ylabel, FS3.errText(paramsy[0], paramsy[1])))
+
+    ax_legend.legend(plots, labels, loc="center")
+
+    return paramsx, paramsy, xData_min, yData_min
 
 ############### fit function classes #################
 

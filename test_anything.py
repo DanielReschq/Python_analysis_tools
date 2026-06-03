@@ -9,6 +9,7 @@ import sympy
 import glob
 import time
 import scipy as sp
+from numpy.polynomial.chebyshev import chebval
 
 mpl.rcParams.update(
     {
@@ -120,60 +121,30 @@ def powerlaw(x, a, k):
 
 def lambda_k(k, L, alpha, J_perp):
     lamb = 0.0
-    for x in np.arange(1, L//2+1):
-        lamb += 2/(x**alpha) * (np.cos(k[0]*x) + np.cos(k[1]*x))
-    return 0.5*(lamb + J_perp)
+    for x in np.arange(1, L // 2 + 1):
+        lamb += 2 / (x**alpha) * (np.cos(k[0] * x) + np.cos(k[1] * x))
+    return 0.5 * (lamb + J_perp)
 
-def epsilon_k(k, L, alpha,J_perp):
+
+def epsilon_k(k, L, alpha, J_perp):
     eps = 0.0
-    for x in np.arange(1, L//2+1):
-        eps += 4/(x**alpha)
-    return 0.5*(eps + J_perp)
+    for x in np.arange(1, L // 2 + 1):
+        eps += 4 / (x**alpha)
+    return 0.5 * (eps + J_perp)
+
 
 def epsilon_0(L, alpha, J_perp):
-    return -1.5*epsilon_k((0,0), L, alpha,J_perp)
+    return -1.5 * epsilon_k((0, 0), L, alpha, J_perp)
 
-def energy(k,L, alpha, J_perp):
+
+def energy(k, L, alpha, J_perp):
     eps0 = epsilon_0(L, alpha, J_perp)
-    epsk = epsilon_k((0, 0), L, alpha,J_perp)
-    lamb = lambda_k(k, L, alpha,J_perp)
-    return np.sqrt(epsk**2 - lamb**2)+eps0
+    epsk = epsilon_k((0, 0), L, alpha, J_perp)
+    lamb = lambda_k(k, L, alpha, J_perp)
+    return np.sqrt(epsk**2 - lamb**2) + eps0
 
-# Sample data
-x = np.linspace(0, 10, 100)
-y1 = np.sin(x)
-y2 = np.cos(x)
+x = np.linspace(0,100,101)
 
-fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+i = np.where(x > 50)
 
-# Plot on both subplots
-axes[0].plot(x, y1, label='sin(x)')
-axes[0].plot(x, y2, label='cos(x)')
-axes[0].set_title("Left plot")
-
-axes[1].plot(x, y1**2, label='sin^2(x)')
-axes[1].plot(x, y2**2, label='cos^2(x)')
-axes[1].set_title("Right plot")
-
-# Collect handles + labels from both axes
-handles, labels = [], []
-for ax in axes:
-    h, l = ax.get_legend_handles_labels()
-    handles.extend(h)
-    labels.extend(l)
-
-# Create ONE legend outside the figure
-fig.legend(handles, labels, loc='center left', bbox_to_anchor=(1.02, 0.5))
-
-# Make space on the right for the legend
-fig.subplots_adjust(right=0.8)
-
-plt.show()
-
-
-
-
-x = np.linspace(2.78, 2.806, 14)
-
-for i in x:
-    print(f"%.3f"  %i,end=",")
+print(x[i])
