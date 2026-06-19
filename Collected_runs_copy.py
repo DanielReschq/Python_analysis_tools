@@ -430,6 +430,9 @@ class collected_runs:
                         np.array(xerrData),
                         np.array(yerrData),
                     )
+
+                    print(x,y)
+
                     tab[L] = np.array([x, y, xerr, yerr]).T
                 else:
                     dx_lambda = sympy.lambdify(("x", "y", "dy"), dx_sym, "numpy")
