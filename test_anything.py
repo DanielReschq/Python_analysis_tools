@@ -9,142 +9,112 @@ import sympy
 import glob
 import time
 import scipy as sp
-from numpy.polynomial.chebyshev import chebval
+import parameters
 
-mpl.rcParams.update(
-    {
-        "text.usetex": False,
-        "font.family": "serif",
-        "font.serif": "cmr10",
-        "mathtext.fontset": "cm",
-        "font.family": "STIXGeneral",
-        "axes.unicode_minus": True,
-        "axes.labelsize": 21,
-        "xtick.labelsize": 18,
-        "ytick.labelsize": 18,
-        "legend.fontsize": 16,
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.major.top": "on",
-        "xtick.major.bottom": "on",
-        "ytick.major.left": "on",
-        "ytick.major.right": "on",
-        "xtick.top": True,
-        "ytick.right": True,
-    }
+# from numpy.polynomial.chebyshev import chebval
+# import parameters
+# from cycler import cycler
+
+# mpl.rcParams.update(
+#     {
+#         "text.usetex": False,
+#         "font.family": "serif",
+#         "font.serif": "cmr10",
+#         "mathtext.fontset": "cm",
+#         "font.family": "STIXGeneral",
+#         "axes.unicode_minus": True,
+#         "axes.labelsize": 21,
+#         "xtick.labelsize": 18,
+#         "ytick.labelsize": 18,
+#         "legend.fontsize": 16,
+#         "xtick.direction": "in",
+#         "ytick.direction": "in",
+#         "xtick.major.top": "on",
+#         "xtick.major.bottom": "on",
+#         "ytick.major.left": "on",
+#         "ytick.major.right": "on",
+#         "xtick.top": True,
+#         "ytick.right": True,
+#         "figure.autolayout": True,
+#     }
+# )
+
+nupZhao23 = np.array(
+    [  # alpha, mean, err
+        [2.30, 1.02932108, 0.03546215],
+        [2.50, 1.02949726, 0.03533631],
+        [2.70, 1.00060404, 0.03493362],
+        [2.90, 0.99131693, 0.03495879],
+        [3.00, 1.00113257, 0.03168691],
+        [3.05, 1.01031901, 0.03488328],
+        [3.10, 1.02081419, 0.03128421],
+        [3.15, 1.03100736, 0.03115837],
+        [3.20, 1.03445542, 0.03113320],
+        [3.30, 1.09020323, 0.03855786],
+        [3.40, 1.11079091, 0.07364248],
+        [3.50, 1.27936828, 0.07973322],
+        [3.60, 1.49898698, 0.11839174],
+        [3.70, 1.63819292, 0.12581640],
+    ]
 )
 
-parameter_dictT = {
-    "path_to_data": "/home/daniel/Master_thesis/Data/Leo4DataJ/",
-    "alpha": [1.5, 2.0, 2.25, 2.5, 2.75, 3.0],
-    "sigma": ["_Tsm050", "_Ts000", "_Ts025", "_Ts050", "_Ts075", "_Ts100"],
-    "gRange": [
-        np.array([2.425, 2.435]),
-        np.array([1.339, 1.348]),
-        np.array([1.092, 1.104]),
-        np.array([0.914, 0.926]),
-        np.array([0.76, 0.785]),
-    ],
-    "LRange": [[64, 256], [64, 256], [64, 256], [64, 256], [64, 256], [64, 256]],
-    "gc": [2.436, 1.34227, 1.097, 0.917, 0.775, 0.66],
-    "nu": [0.976, 1.01, 1.05, 1.41, 2.0, 1.8],
-    "eta": [0.997, 0.935, 0.8, 0.66, 0.5, 0.4],
-    # "chiMax": [9.0, 100.9, 800.4, 100.4, 30000, 50000],
-    # "rho_L_power": [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    # "JRange": [np.array([4.9,5.2]),np.array([2.89,2.90]),np.array([2.15,2.17]),np.array([0,2.18]),np.array([0,2.18])],
-    # "J0": [5.1,2.895,2.165,1.89,2.17],
-    # "nuJ": [1.0,1.0,1.2,1.0,1.0],
-    # "chiMaxJ": [[1.0,126],[10000,10000],[10000,10000],[10000,10000],[10000,10000]]
-}
+betaZhao23 = np.array(
+    [  # alpha, mean, err
+        [2.30, 0.52924515, 0.03442599],
+        [2.50, 0.53276764, 0.03373602],
+        [2.70, 0.52270857, 0.03476493],
+        [2.90, 0.48908149, 0.03500702],
+        [3.00, 0.50858229, 0.03129085],
+        [3.05, 0.49458916, 0.03475282],
+        [3.10, 0.44402750, 0.03113349],
+        [3.15, 0.43905244, 0.03141190],
+        [3.20, 0.39971191, 0.03112139],
+        [3.30, 0.39729095, 0.03809374],
+        [3.40, 0.31500266, 0.04201569],
+        [3.50, 0.31367114, 0.04538082],
+        [3.60, 0.31471215, 0.05574251],
+        [3.70, 0.31986878, 0.06959037],
+    ]
+)
 
-parameter_dictJ = {
-    "path_to_data": "/home/daniel/Master_thesis/Data/Leo4DataJ",
-    "alpha": np.array([1.5, 2.0, 2.5, 3.0, 3.5]),
-    "sigma": ["_Jsm050", "_Js000", "_Js050", "_Js100", "_Js150"],
-    "gRange": [
-        np.array([9.94, 10.02]),
-        np.array([5.77, 5.805]),
-        np.array([4.3, 4.38]),
-        np.array([3.58, 3.61]),
-        np.array([3.17, 3.2]),
-    ],
-    "LRange": np.array([[32, 128], [32, 128], [32, 128], [32, 128], [32, 128]]),
-    "gc": np.array([9.975, 5.802, 4.33, 3.595, 3.1835]),
-    "nu": np.array([0.745, 0.736, 0.75, 0.75, 0.723]),
-    "eta": np.array([1.0, 1.0, 1.0, 1.0, 1.0]),
-    # "chiMax":  np.array([100000.0, 100000.0, 150000.0, 20000, 8000.0]),
-    # "nuJ": [1.0,1.0,1.2,1.0,1.0],
-    # "chiMaxJ": [[1.0,126],[10000,10000],[10000,10000],[10000,10000],[10000,10000]]
-}
+etaZhao23 = np.array(
+    [  # alpha, mean, err
+        [2.30, 1.00482525, 0.02614361],
+        [2.50, 1.00591571, 0.02854261],
+        [2.70, 1.00635189, 0.01927376],
+        [2.90, 0.99920942, 0.02554386],
+        [3.00, 1.01951911, 0.02306308],
+        [3.05, 0.96927648, 0.02189085],
+        [3.10, 0.92233248, 0.02276321],
+        [3.15, 0.88670192, 0.01019574],
+        [3.20, 0.79055122, 0.02090944],
+        [3.30, 0.71830871, 0.02041873],
+        [3.40, 0.61425222, 0.02088218],
+        [3.50, 0.49795540, 0.01984625],
+        [3.60, 0.41900660, 0.02000981],
+        [3.70, 0.38471185, 0.02219072],
+    ]
+)
 
+L_list = [32, 64, 128, 256, 512,1024, 2048, 4096]
+JSLAC_list = []
+JFC_list = []
 
-def poly(x, *params):
-    f = 0
-    for n in range(len(params)):
-        f += params[n] * x**n
-    return f
+alpha = 2.0
 
-
-def poly_derivative(x, *params):
-    f = 0
-    for n in range(len(params)):
-        f += n * params[n] * x ** (n - 1)
-    return f
+for L in L_list:
+    JSLAC = 0
+    JFC = 0
+    for x in range(1, L // 2):
+        JSLAC += 4 / (x**alpha)
+        JFC+= 4 / (x**alpha)
+        for y in range(1, L // 2):
+            JFC += 4 / ((x**2 + y**2) ** (0.5 * (alpha+1)))
+    JSLAC_list.append(JSLAC)
+    JFC_list.append(JFC)
 
 
-def log(x, a, b):
-    return a * np.log(x + b)
+plt.scatter(L_list, np.array(JSLAC_list))
+plt.scatter(L_list, np.array(JFC_list))
 
-
-def over(x, a, b, c):
-    return a / (x + b) ** 2 + c
-
-
-def shift(f, L, gc, nu, c, omega):
-    def g(x, *args):
-        return f((x - gc) * L**nu, *args) * (1 + c * L ** (-omega))
-
-    return g
-
-
-def gauss_fit(x, mean, std_err):
-    return (
-        1.0
-        / (np.sqrt(2 * np.pi) * std_err)
-        * np.exp(-0.5 * ((x - mean) / std_err) ** 2)
-    )
-
-
-def powerlaw(x, a, k):
-    return k * x**a
-
-
-def lambda_k(k, L, alpha, J_perp):
-    lamb = 0.0
-    for x in np.arange(1, L // 2 + 1):
-        lamb += 2 / (x**alpha) * (np.cos(k[0] * x) + np.cos(k[1] * x))
-    return 0.5 * (lamb + J_perp)
-
-
-def epsilon_k(k, L, alpha, J_perp):
-    eps = 0.0
-    for x in np.arange(1, L // 2 + 1):
-        eps += 4 / (x**alpha)
-    return 0.5 * (eps + J_perp)
-
-
-def epsilon_0(L, alpha, J_perp):
-    return -1.5 * epsilon_k((0, 0), L, alpha, J_perp)
-
-
-def energy(k, L, alpha, J_perp):
-    eps0 = epsilon_0(L, alpha, J_perp)
-    epsk = epsilon_k((0, 0), L, alpha, J_perp)
-    lamb = lambda_k(k, L, alpha, J_perp)
-    return np.sqrt(epsk**2 - lamb**2) + eps0
-
-x = np.linspace(0,100,101)
-
-i = np.where(x > 50)
-
-print(x[i])
+plt.show()

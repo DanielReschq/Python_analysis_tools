@@ -154,7 +154,7 @@ def fit_residuals(params, sum, data, fitFunction):
 
 
 # -----------------------------------------------------------------------------------------
-def fit_leastsq(data, fitFunction, params=[]):
+def fit_leastsq(data, fitFunction, params=[], full_output=False):
 
     if len(params) == 0:
         params = np.random.random(fitFunction.nparams())
@@ -181,13 +181,16 @@ def fit_leastsq(data, fitFunction, params=[]):
             dparams = None
     else:
         dparams = np.ones_like(params) * float("nan")
+        dparams2 = None
         redChi2 = -1
 
+    if full_output:
+        return params, dparams, redChi2, ierr, mesg, dparams2
     return params, dparams, redChi2, ierr, mesg
 
 
 # -----------------------------------------------------------------------------------------
-def fit_minimize(data, fitFunction, params=[], **kwargs):
+def fit_minimize(data, fitFunction, params=[], full_output=False, **kwargs):
 
     if len(params) == 0:
         params = np.random.random(fitFunction.nparams())
@@ -202,11 +205,15 @@ def fit_minimize(data, fitFunction, params=[], **kwargs):
             np.sum(np.fromiter((len(data[L]) for L in list(data)), np.double))
             - fitFunction.nparams()
         )
-        dparams = np.sqrt(np.diag(result.hess_inv))
+        cov = result.hess_inv
+        dparams = np.sqrt(np.diag(cov))
     else:
         redChi2 = -1
         dparams = np.ones_like(params) * float("nan")
+        cov = None
 
+    if full_output:
+        return params, dparams, redChi2, ierr, mesg, cov
     return params, dparams, redChi2, ierr, mesg
 
 
@@ -234,7 +241,7 @@ def fit_precond(data, fitFunction, params=[]):
 # -----------------------------------------------------------------------------------------
 def fitSummary(fitFunction, res, silent=False):
 
-    params, dparams, redChi2, ierr, mesg = res
+    params, dparams, redChi2, ierr, mesg = res[:5]
     var = fitFunction.unpack(params)
     dvar = fitFunction.unpack(dparams)
 
@@ -587,7 +594,10 @@ def plotStyle(L):
     """Return the plot-style (color, marker, ...) for a provided system size or
     incremental index for the matplotlib.plot()."""
 
-    styleIndex = _style["Ldict"][L]
+    if len(_style["Ldict"]) != 0:
+        styleIndex = _style["Ldict"][L]
+    else:
+        styleIndex = L
 
     return {
         "color": _style["markerEdgeColor"][styleIndex],
@@ -601,7 +611,10 @@ def errorbarStyle(L):
     """Return the plot-style (color, marker, ...) for a provided system size or
     incremental index for the matplotlib.errorbar()."""
 
-    styleIndex = _style["Ldict"][L]
+    if len(_style["Ldict"]) != 0:
+        styleIndex = _style["Ldict"][L]
+    else:
+        styleIndex = L
 
     return {
         "marker": _style["marker"][styleIndex],
@@ -663,7 +676,8 @@ def legend(ax, plots, labels, legendLabelBreak=3, loc=(0.00, 0.02, 0.2), isInset
                 ax.legend(
                     plots[i * legendLabelBreak : (i + 1) * legendLabelBreak],
                     labels[i * legendLabelBreak : (i + 1) * legendLabelBreak],
-                    loc=legendLoc[i],
+                    loc="upper left",
+                    bbox_to_anchor=legendLoc[i],
                     frameon=False,
                     labelspacing=0.4,
                     handletextpad=-0.25,
@@ -676,7 +690,8 @@ def legend(ax, plots, labels, legendLabelBreak=3, loc=(0.00, 0.02, 0.2), isInset
                 ax.legend(
                     plots[i * legendLabelBreak : (i + 1) * legendLabelBreak],
                     labels[i * legendLabelBreak : (i + 1) * legendLabelBreak],
-                    loc=legendLoc[i],
+                    loc="upper left",
+                    bbox_to_anchor=legendLoc[i],
                     frameon=False,
                     labelspacing=0.4,
                     handletextpad=-0.25,

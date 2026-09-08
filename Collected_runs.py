@@ -10,7 +10,8 @@ import sympy
 import FS3
 import sys
 import matplotlib as mpl
-from matplotlib.patches import Patch
+import matplotlib.patches as patches
+from matplotlib.lines import Line2D
 import struct
 
 
@@ -339,6 +340,7 @@ class collected_runs:
         yscale="linear",
         xlabel="",
         ylabel="",
+        loc_legend=(0.78, 0.02, 0.18),
     ):
         """get table of any data x vs y.
         if x error exists: return tab[L] = [x,y,xerr,yerr].T
@@ -354,6 +356,7 @@ class collected_runs:
             yData = []
             xerrData = []
             yerrData = []
+
             for run in self.L_dict[L]:
                 N = run.params["N"]
 
@@ -487,7 +490,7 @@ class collected_runs:
                 ax0.plot(tab[L][:, 0], tab[L][:, 1], **FS3.plotStyle(L), linestyle="-")
                 plots.append(p)
                 labels.append(r"$L = %s$" % L)
-            FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=(0.2, 0.2, 0.18))
+            FS3.legend(ax0, plots, labels, legendLabelBreak=7, loc=loc_legend)
             fig.suptitle(r"$\alpha = %.2f $" % (self.runs[0].alpha))
             ax0.set_xscale(xscale)
             ax0.set_yscale(yscale)
@@ -546,15 +549,17 @@ class collected_runs:
 ############### fit data #############################
 
 
-def fit_data(data, fitFunction, start_params, fitSummary=False):
+def fit_data(data, fitFunction, start_params, fitSummary=False, full_output=False):
 
-    params0 = start_params + np.random.randn(len(start_params)) * 0.01
+    params0 = start_params + np.random.randn(len(start_params)) * 0.0001
 
     params0 = np.hstack(
         (params0, 0.01 * np.random.randn(fitFunction.nparams() - len(start_params)))
     )
 
-    res = FS3.fit_minimize(data, fitFunction, params=params0, **{"method": "BFGS"})
+    res = FS3.fit_minimize(
+        data, fitFunction, params=params0, full_output=full_output, **{"method": "BFGS"}
+    )
 
     if fitSummary:
         FS3.fitSummary(fitFunction, res)
@@ -608,7 +613,7 @@ def plot_fit(data, fitFunction, params, xlabel, ylabel, loc_legend=(0.78, 0.02, 
 def plot_DataCollapse(
     dataCollapse, fitFunction, fitResult, xlabel="", ylabel="", insetFigure=None, loc=3
 ):
-    params, dparams, redChi2, mesg, ierr = fitResult
+    params, dparams, redChi2, mesg, ierr = fitResult[:5]
     var = fitFunction.unpack(params)
 
     xmin = float("inf")
@@ -673,9 +678,57 @@ def scatter_histograms(
     y_range,
     chi2,
     num_bins,
+    savefig=None,
     xlabel=None,
     ylabel=None,
 ):
+    small_chi = chi2.where(chi2 < 5 * np.min(chi2)).notna()
+
+    xData = xData[small_chi].reset_index(drop=True)
+    yData = yData[small_chi].reset_index(drop=True)
+    chi2 = chi2[small_chi].reset_index(drop=True)
+
+    ############### Scatterplot#######################
+
+    fig, ax = plt.subplots(1, 1)
+
+    chi_max = 5 * np.min(chi2)
+
+    sc = ax.scatter(
+        xData,
+        yData,
+        c=np.clip(chi2, 0, chi_max),
+        cmap="magma",
+        vmin=0,
+        vmax=chi_max,
+        alpha=0.25,
+    )
+
+    box = patches.Rectangle(
+        (x_range[0], y_range[0]),
+        (x_range[1] - x_range[0]),
+        (y_range[1] - y_range[0]),
+        edgecolor="red",
+        fill=False,
+    )
+    ax.add_patch(box)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.ticklabel_format(axis="both", style="plain", useOffset=False)
+
+    cbar = fig.colorbar(sc)
+    cbar.solids.set(alpha=1.0)
+    cbar.set_label(r"$\chi^2$")
+    ticks = np.linspace(0, chi_max, 6)
+    cbar.set_ticks([0, chi_max / 2, chi_max])
+    cbar.set_ticklabels(["0", "%.2f" % (chi_max / 2), "%.2f +" % (chi_max)])
+
+    if type(savefig) == str:
+        fig.savefig("scatter_" + savefig, bbox_inches="tight")
+
+    ######################## Histograms ########################
+
     fig = plt.figure(figsize=(8, 8))
     grid_space = mpl.gridspec.GridSpec(
         2, 2, wspace=0.1, hspace=0.1, height_ratios=[1, 1], figure=fig
@@ -694,7 +747,7 @@ def scatter_histograms(
         axis="both", labelbottom=True, labeltop=False, labelleft=False, labelright=True
     )
 
-    imin = np.argmin(chi2)
+    imin = chi2.argmin()
     xData_min = xData[imin]
     yData_min = yData[imin]
 
@@ -709,7 +762,7 @@ def scatter_histograms(
     chi2 = chi2[iZoom]
 
     weights = np.exp(np.array(-chi2) / 2)
-    #weights = np.ones(len(chi2))
+    # weights = np.ones(len(chi2))
     weights /= weights.sum()
 
     scatter = ax_scatter.hist2d(
@@ -722,12 +775,13 @@ def scatter_histograms(
         cmap="Blues",
     )
 
+    ax_scatter.ticklabel_format(axis="both", style="plain", useOffset=False)
     ax_scatter.xaxis.set_major_locator(MultipleLocator(x_steps))
     ax_scatter.xaxis.set_minor_locator(MultipleLocator(x_steps / 2))
-    ax_scatter.xaxis.set_major_formatter(FormatStrFormatter("%.2f"))
+    # ax_scatter.xaxis.set_major_formatter(FormatStrFormatter("%.3f"))
     ax_scatter.yaxis.set_major_locator(MultipleLocator(y_steps))
     ax_scatter.yaxis.set_minor_locator(MultipleLocator(y_steps / 2))
-    ax_scatter.yaxis.set_major_formatter(FormatStrFormatter("%.4f"))
+    # ax_scatter.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
     # fig.colorbar(scatter[2], ax_scatter,orientation="horizontal")
     # cbar.set_label(r"$\chi^2$", loc="center")
     # ax_cbar.tick_params(axis="y", labelleft=True, labelright=False)
@@ -768,19 +822,53 @@ def scatter_histograms(
     midppointsx = 0.5 * (binx[:-1] + binx[1:])
     midppointsy = 0.5 * (biny[:-1] + biny[1:])
 
+    # weights = np.ones(len(chi2))
+    # weights /= weights.sum()
+
+    # scatter = ax_scatter.hist2d(
+    #     xData,
+    #     yData,
+    #     bins=num_bins,
+    #     range=[x_range, y_range],
+    #     # weights=weights,
+    #     density=True,
+    #     cmap="Oranges",
+    #     alpha=0.5,
+    # )
+
+    # numx, binx, patchesx = ax_xhist.hist(
+    #     xData, num_bins, x_range, density=True, alpha=0.5
+    # )
+
+    # numy, biny, patchesy = ax_yhist.hist(
+    #     yData,
+    #     num_bins,
+    #     y_range,
+    #     # weights=weights,
+    #     density=True,
+    #     orientation="horizontal",
+    #     alpha=0.5,
+    # )
+
     paramsx, pcovx = sp.optimize.curve_fit(
-        gauss_fit, midppointsx, numx, p0=[xData_min, 0.01]
+        gauss_fit,
+        midppointsx,
+        numx,
+        p0=[(np.sum(x_range) * 0.5), (x_range[1] - x_range[0]) * 0.3],
     )
     x = np.linspace(x_range[0], x_range[1], 400)
     p = ax_xhist.plot(x, gauss_fit(x, *paramsx), color="r")[0]
     plots.append(p)
     ax_xhist.vlines(xData_min, 0, gauss_fit(xData_min, *paramsx), color="red", ls="--")
     ax_scatter.vlines(
-       xData_min, yData_min, ax_scatter.get_ylim()[1], color="red", ls="--"
+        xData_min, yData_min, ax_scatter.get_ylim()[1], color="red", ls="--"
     )
 
     paramsy, pcovy = sp.optimize.curve_fit(
-        gauss_fit, midppointsy, numy, p0=[yData_min, 0.01]
+        gauss_fit,
+        midppointsy,
+        numy,
+        p0=[(np.sum(y_range) * 0.5), (y_range[1] - y_range[0]) * 0.3],
     )
     y = np.linspace(y_range[0], y_range[1], 400)
     ax_yhist.plot(gauss_fit(y, *paramsy), y, color="r")
@@ -797,9 +885,191 @@ def scatter_histograms(
         + r"%s $= %s$" % (ylabel, FS3.errText(paramsy[0], paramsy[1]))
     )
 
+    # plots = [
+    #     patches.Patch(facecolor="tab:blue", alpha=1.0, edgecolor="black", label="LR Gaussian"),
+    #     patches.Patch(
+    #         facecolor="tab:orange", alpha=0.5, edgecolor="black", label="LR non-Gaussian"
+    #     ),
+    # ]
+
+    # labels = ["weighted","not weighted"]
+
     ax_legend.legend(plots, labels, loc="center")
 
+    if type(savefig) == str:
+        fig.savefig("hist_" + savefig, bbox_inches="tight")
+
     return paramsx, paramsy, xData_min, yData_min
+
+
+def plot_exp_vs_alpha(
+    data_arrays,
+    ylabel,
+    invert=False,
+    MF_limit=None,
+    SR_limit=None,
+    loc_legend="best",
+    savefig=None,
+):
+    """data arrays: [[(x1,y1,yerr1),label1], [(x2,y2,yerr2),label2], ...]"""
+
+    alpha_min = np.inf
+    alpha_max = -np.inf
+
+    for data in data_arrays:
+        alpha_min = min(alpha_min, np.min(data[0][:, 0]) - 0.2)
+        alpha_max = max(alpha_max, np.max(data[0][:, 0]) + 0.2)
+
+    # transition points
+    x_MF = 7 / 3
+    x_SR = 3.0
+
+    sharpness = 0.1
+
+    # smooth area around the transition points
+    if invert:
+        x_MF = 1 / x_MF
+        x_SR = 1 / x_SR
+
+        sharpness = 0.01
+
+        # alpha-grid for the background
+        alpha_space = np.linspace(0, 1 / alpha_min, 1000)
+    else:
+        alpha_space = np.linspace(alpha_min, alpha_max, 1000)
+
+    s1 = 1 / (1 + np.exp(-(alpha_space - x_MF) / sharpness))
+    s2 = 1 / (1 + np.exp(-(alpha_space - x_SR) / sharpness))
+
+    if invert:
+        mean_field = [s1, mpl.colors.to_rgb("#cce5cc")]
+        non_gaussian = [s2 * (1 - s1), mpl.colors.to_rgb("#ffe0a6")]
+        short_range = [1 - s2, mpl.colors.to_rgb("white")]
+        xlabel = r"$1/\alpha$"
+
+        for data in data_arrays:
+            data[0][:, 0] = 1 / data[0][:, 0]
+
+        max_MF = 1 / alpha_min
+        max_SR = 0
+    else:
+        mean_field = [1 - s1, mpl.colors.to_rgb("#cce5cc")]
+        non_gaussian = [s1 * (1 - s2), mpl.colors.to_rgb("#ffe0a6")]
+        short_range = [s2, mpl.colors.to_rgb("white")]
+        xlabel = r"$\alpha$"
+
+        max_MF = alpha_min
+        max_SR = alpha_max
+
+    fig, ax = FS3.figure(xlabel=xlabel, ylabel=ylabel)
+    FS3.setStyle()
+
+    if invert:
+        ax.set_xlim(0, 1 / alpha_min)
+    else:
+        ax.set_xlim(alpha_min, alpha_max)
+
+    plots = []
+    labels = []
+
+    i = 0
+    for data in data_arrays[:-1]:
+        plots.extend(
+            [
+                ax.errorbar(
+                    data[0][:, 0],
+                    data[0][:, 1],
+                    yerr=data[0][:, 2],
+                    **FS3.errorbarStyle(i),
+                    ls="",
+                )
+            ]
+        )
+        labels.extend([data[1]])
+        i += 1
+
+    data = data_arrays[-1]
+    plots.extend(
+        [
+            ax.errorbar(
+                data[0][:, 0],
+                data[0][:, 1],
+                yerr=data[0][:, 2],
+                **FS3.errorbarStyle(5),
+                ls="",
+            )
+        ]
+    )
+    labels.extend([data[1]])
+
+    ax.hlines(MF_limit, x_MF, max_MF, color="red", ls="--", alpha=0.5)
+    ax.hlines(SR_limit, x_SR, max_SR, color="red", ls="--", alpha=0.5)
+
+    if MF_limit != None or SR_limit != None:
+        plots.extend(
+            [
+                Line2D(
+                    [0],
+                    [0],
+                    color="red",
+                    linestyle="--",
+                    alpha=0.5,
+                )
+            ]
+        )
+        labels.extend(["LR/SR limit"])
+    if MF_limit and SR_limit:
+        ax.plot([x_MF, x_SR], [MF_limit, SR_limit], color="red", ls="--", alpha=0.5)
+
+    for weights, color in [mean_field, non_gaussian, short_range]:
+        img = np.zeros((2, len(alpha_space), 4))
+        img[..., :3] = color
+        img[..., 3] = 1.0 * weights
+
+        ax.imshow(
+            img,
+            extent=[
+                ax.get_xlim()[0],
+                ax.get_xlim()[1],
+                ax.get_ylim()[0],
+                ax.get_ylim()[1],
+            ],
+            origin="lower",
+            aspect="auto",
+            interpolation="bilinear",
+            zorder=0,
+        )
+
+    plots.extend(
+        [
+            patches.Patch(
+                facecolor=mean_field[1],
+                alpha=1.0,
+                edgecolor="black",
+                label="LR Gaussian",
+            ),
+            patches.Patch(
+                facecolor=non_gaussian[1],
+                alpha=1.0,
+                edgecolor="black",
+                label="LR non-Gaussian",
+            ),
+            patches.Patch(
+                facecolor=short_range[1], alpha=1.0, edgecolor="black", label="SR"
+            ),
+        ]
+    )
+
+    labels.extend(["LR Gaussian", "LR non-Gaussian", "SR"])
+
+    ax.legend(handles=plots, labels=labels, loc=loc_legend, frameon=True)
+
+    if savefig and invert:
+        fig.savefig("%s_vs_alpha_inverse.pdf" % (savefig), bbox_inches="tight")
+    elif savefig:
+        fig.savefig("%s_vs_alpha.pdf" % (savefig), bbox_inches="tight")
+
+    return fig, ax
 
 
 ############### fit function classes #################
@@ -1047,53 +1317,74 @@ class f_general:  # Scaling function with large finite-size effects and uncertai
 
 class fitfunc:
 
-    def f_lambda(self):
-        Ls = sympy.symbols("L")
-        xs = sympy.symbols("x")
-        vars_symbols = sympy.symbols(self.vars)
+    def __init__(self, fstring, vars, fixed=None, polyOrder=3):
 
-        p = 0
-        for n in range(self.polyOrder + 1):
-            a_n = vars_symbols[-self.polyOrder - 1 + n]
-            p += a_n * xs**n
-
-        f = sympy.Lambda(xs, p)
-
-        ns = {"f": f, "L": Ls, "x": xs}
-        for name in self.vars:
-            ns[name] = vars_symbols[self.vars.index(name)]
-
-        f = sympy.sympify(self.fstring, locals=ns)
-
-        return sympy.lambdify((xs, Ls, *vars_symbols), f, modules="numpy")
-
-    def __init__(self, fstring, vars, polyOrder):
-        self.vars = vars  # list of variable names in your scaling function
-        self.polyOrder = (
-            polyOrder  # the polyomial expansion order in your scaling function
-        )
         self.fstring = fstring
+        self.all_vars = vars.copy()
+
+        self.fixed_vars = fixed or {}
+
+        # only keep free parameters
+        self.free_vars = [v for v in vars if v not in self.fixed_vars]
+
+        self.polyOrder = polyOrder
 
         for n in range(polyOrder + 1):
-            self.vars.append("a%d" % n)
+            self.free_vars.append(f"a{n}")
 
         self.fitfunc_lambda = self.f_lambda()
 
+    def f_lambda(self):
+        L = sympy.symbols("L")
+        x = sympy.symbols("x")
+
+        # Create symbols for every variable (free + fixed)
+        symbol_dict = {}
+
+        for name in self.all_vars:
+            symbol_dict[name] = sympy.symbols(name)
+
+        for n in range(self.polyOrder + 1):
+            symbol_dict[f"a{n}"] = sympy.symbols(f"a{n}")
+
+        p = 0
+        for n in range(self.polyOrder + 1):
+            p += symbol_dict[f"a{n}"] * x**n
+
+        poly = sympy.Lambda(x, p)
+
+        ns = {"f": poly, "L": L, "x": x}
+        ns.update(symbol_dict)
+
+        expr = sympy.sympify(self.fstring, locals=ns)
+
+        # Substitute fixed parameters
+        expr = expr.subs(
+            {symbol_dict[name]: value for name, value in self.fixed_vars.items()}
+        )
+
+        # Free symbols in correct order
+        free_symbols = [symbol_dict[name] for name in self.free_vars]
+
+        return sympy.lambdify((x, L, *free_symbols), expr, modules="numpy")
+
     def nparams(self):
-        return len(self.vars)
+        return len(self.free_vars)
 
     def unpack(self, params):
-        var = {}
-        for name in list(self.vars):
-            var[name] = params[self.vars.index(name)]
-        return var
+        all_vars_dic = dict(zip(self.free_vars, params))
+        for name, value in self.fixed_vars.items():
+            all_vars_dic[name] = value
+        return all_vars_dic
 
     def func(self, x, L, params):
         return self.fitfunc_lambda(x, L, *params)
 
     def poly(self, x, params):
         f = 0
+        start = self.nparams() - (self.polyOrder + 1)
+
         for n in range(self.polyOrder + 1):
-            index = self.nparams() - (self.polyOrder + 1) + n
-            f += params[index] * x**n
+            f += params[start + n] * x**n
+
         return f
