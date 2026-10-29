@@ -260,7 +260,7 @@ class collected_runs:
         ]
 
         self.obs_labels = {
-            "energy": r"$e$",
+            "energy": r"$E$",
             "mag": r"$m$",
             "mag_stag": r"$m_s$",
             "mag2": r"$m^2$",
@@ -911,7 +911,7 @@ def plot_exp_vs_alpha(
     loc_legend="best",
     savefig=None,
 ):
-    """data arrays: [[(x1,y1,yerr1),label1], [(x2,y2,yerr2),label2], ...]"""
+    """data arrays: [[(x1,y1,yerr1),label1,style1], [(x2,y2,yerr2),label2,style2], ...]"""
 
     alpha_min = np.inf
     alpha_max = -np.inf
@@ -973,34 +973,20 @@ def plot_exp_vs_alpha(
     labels = []
 
     i = 0
-    for data in data_arrays[:-1]:
+    for data in data_arrays:
         plots.extend(
             [
                 ax.errorbar(
                     data[0][:, 0],
                     data[0][:, 1],
                     yerr=data[0][:, 2],
-                    **FS3.errorbarStyle(i),
+                    **data[2],
                     ls="",
                 )
             ]
         )
         labels.extend([data[1]])
         i += 1
-
-    data = data_arrays[-1]
-    plots.extend(
-        [
-            ax.errorbar(
-                data[0][:, 0],
-                data[0][:, 1],
-                yerr=data[0][:, 2],
-                **FS3.errorbarStyle(5),
-                ls="",
-            )
-        ]
-    )
-    labels.extend([data[1]])
 
     ax.hlines(MF_limit, x_MF, max_MF, color="red", ls="--", alpha=0.5)
     ax.hlines(SR_limit, x_SR, max_SR, color="red", ls="--", alpha=0.5)
